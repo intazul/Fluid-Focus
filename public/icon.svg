@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#000000" />
+  <circle cx="256" cy="256" r="184" fill="none" stroke="#ffffff" stroke-width="14" />
+  <circle cx="256" cy="256" r="144" fill="none" stroke="#ffffff" stroke-opacity="0.32" stroke-width="4" stroke-dasharray="6 14" />
+  <path d="M112,286 Q184,252 256,286 T400,286 L400,430 L112,430 Z" fill="#ffffff" clip-path="url(#dial)" />
+  <defs>
+    <clipPath id="dial">
+      <circle cx="256" cy="256" r="176" />
+    </clipPath>
+  </defs>
+  <line x1="256" y1="256" x2="256" y2="128" stroke="#ffffff" stroke-width="14" stroke-linecap="round" />
+  <line x1="256" y1="256" x2="342" y2="256" stroke="#ffffff" stroke-width="10" stroke-linecap="round" />
+  <circle cx="256" cy="256" r="14" fill="#ffffff" />
+</svg>

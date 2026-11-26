@@ -1,0 +1,67 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  html,
+  body {
+    font-family: var(--font-sans);
+    background-color: #ffffff;
+    color: #000000;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  html.dark,
+  html.dark body {
+    background-color: #000000;
+    color: #ffffff;
+  }
+
+  ::selection {
+    background-color: #000000;
+    color: #ffffff;
+  }
+
+  html.dark ::selection {
+    background-color: #ffffff;
+    color: #000000;
+  }
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.atelier-grid-bg {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.085) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+html.dark .atelier-grid-bg {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.095) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.portrait-lock-overlay {
+  display: none;
+}
+
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 560px) {
+  .portrait-lock-overlay {
+    display: flex;
+  }
+}
