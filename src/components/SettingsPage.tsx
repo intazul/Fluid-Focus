@@ -124,7 +124,7 @@ export function SettingsPage({
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
         <div className="text-sm font-semibold">{title}</div>
-        <div className="text-xs text-black/60 dark:text-white/60 mt-0.5">{desc}</div>
+        <div className="text-xs text-black/75 dark:text-white/80 mt-0.5">{desc}</div>
       </div>
       <button
         type="button"
@@ -170,7 +170,7 @@ export function SettingsPage({
       <div className="min-w-0 rounded-xl border border-black/15 dark:border-white/20 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2 text-xs">
           <span className="font-semibold text-black/80 dark:text-white/80">{label}</span>
-          <span className="font-mono-tabular text-black/55 dark:text-white/55">{unit}</span>
+          <span className="font-mono-tabular text-black/75 dark:text-white/80">{unit}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -239,7 +239,7 @@ export function SettingsPage({
       <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-9 pb-[max(2rem,env(safe-area-inset-bottom))] space-y-7">
         {/* Category Switcher Strip (Pure Black & White Contrasting Buttons) */}
         <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-black/10 dark:border-white/15">
-          <p className="text-xs sm:text-sm text-black/65 dark:text-white/65">
+          <p className="text-xs sm:text-sm text-black/75 dark:text-white/80">
             Changes save instantly and apply to your clock and focus sessions.
           </p>
 
@@ -273,7 +273,7 @@ export function SettingsPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold">01. Clock &amp; Visual Contrast</h2>
-                <p className="text-xs text-black/60 dark:text-white/60 mt-0.5">
+                <p className="text-xs text-black/75 dark:text-white/80 mt-0.5">
                   High-contrast theme polarity, dial format, sweep cadence, and clock animations.
                 </p>
               </div>
@@ -403,7 +403,7 @@ export function SettingsPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold">02. Timers, Targets &amp; Profiles</h2>
-                <p className="text-xs text-black/60 dark:text-white/60 mt-0.5">
+                <p className="text-xs text-black/75 dark:text-white/80 mt-0.5">
                   Dial in focus blocks, breaks, daily goals, and save up to 3 custom profiles.
                 </p>
               </div>
@@ -509,7 +509,7 @@ export function SettingsPage({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-semibold">Saved Interval Profiles</div>
-                  <div className="text-xs text-black/60 dark:text-white/60">
+                  <div className="text-xs text-black/75 dark:text-white/80">
                     Edit any profile name, apply its timings, or overwrite it with your current setup.
                   </div>
                 </div>
@@ -606,7 +606,7 @@ export function SettingsPage({
             <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/15">
               <div>
                 <h2 className="text-base font-bold">03. Focus Habits &amp; XP Mastery</h2>
-                <p className="text-xs text-black/60 dark:text-white/60 mt-0.5">
+                <p className="text-xs text-black/75 dark:text-white/80 mt-0.5">
                   +5 XP per 30m concentration · +3 XP Zero-Urge bonus · +2 XP Peak Window bonus.
                 </p>
               </div>
@@ -615,7 +615,7 @@ export function SettingsPage({
                   <div className="text-sm font-bold">
                     {xpState.totalXp} XP · {getMonolithRank(xpState.totalXp).name}
                   </div>
-                  <div className="text-[11px] text-black/60 dark:text-white/60">
+                  <div className="text-[11px] text-black/75 dark:text-white/80">
                     {Math.floor(xpState.carryFocusSeconds / 60)}/
                     {Math.round(XP_INTERVAL_SECONDS / 60)}m to next +5 XP
                   </div>
@@ -746,7 +746,7 @@ export function SettingsPage({
           <section className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6">
             <div>
               <h2 className="text-base font-bold">04. Acoustics, Automation &amp; Data</h2>
-              <p className="text-xs text-black/60 dark:text-white/60 mt-0.5">
+              <p className="text-xs text-black/75 dark:text-white/80 mt-0.5">
                 Auto-transitions, chimes, generative soundscapes, and local backup controls.
               </p>
             </div>
@@ -885,6 +885,7 @@ export function SettingsPage({
                         [
                           { id: 'rainBirds', label: 'Rain & Birds Music' },
                           { id: 'rain', label: 'Soft Rain' },
+                          { id: 'clockTick', label: 'Mild Clock Tick' },
                           { id: 'brown', label: 'Brown Noise' },
                           { id: 'gamma40', label: '40Hz Gamma' },
                           { id: 'off', label: 'Off' },
@@ -926,7 +927,7 @@ export function SettingsPage({
                 <div className="pt-4 border-t border-black/10 dark:border-white/10 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-semibold">Local Session Data</span>
-                    <span className="text-xs font-mono-tabular text-black/60 dark:text-white/60">
+                    <span className="text-xs font-mono-tabular text-black/75 dark:text-white/80">
                       {sessions.length} sessions stored
                     </span>
                   </div>

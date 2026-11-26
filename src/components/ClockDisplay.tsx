@@ -310,14 +310,14 @@ function ClockFaceLayer({
       {showDialCaption && (
         <text
           x={CX}
-          y={CY - 62}
+          y={CY - 64}
           textAnchor="middle"
           dominantBaseline="central"
           fill={ink}
-          fillOpacity="0.88"
-          fontSize="13"
+          fillOpacity="0.92"
+          fontSize="13.5"
           fontWeight="700"
-          letterSpacing="3.4"
+          letterSpacing="2.8"
           fontFamily="var(--font-sans)"
         >
           {phaseLabel.toUpperCase()}
@@ -330,11 +330,11 @@ function ClockFaceLayer({
         textAnchor="middle"
         dominantBaseline="central"
         fill={ink}
-        fontSize={isLongFormat ? '46' : '70'}
+        fontSize={isLongFormat ? '50' : '78'}
         fontWeight="700"
-        letterSpacing="-1.5"
+        letterSpacing="-0.5"
         fontFamily="var(--font-mono)"
-        style={{ fontVariantNumeric: 'tabular-nums' }}
+        style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum" 1' }}
       >
         {digits}
       </text>
@@ -342,13 +342,13 @@ function ClockFaceLayer({
       {showDialCaption && (
         <text
           x={CX}
-          y={CY + 52}
+          y={CY + 54}
           textAnchor="middle"
           dominantBaseline="central"
           fill={ink}
-          fillOpacity="0.86"
-          fontSize="12"
-          fontWeight="600"
+          fillOpacity="0.9"
+          fontSize="13"
+          fontWeight="700"
           fontFamily="var(--font-sans)"
         >
           {`${subCaption} · ${percentageText}`}
@@ -664,10 +664,10 @@ export function ClockDisplay({
         )}
 
         <div
-          className={`font-mono-tabular font-bold tracking-[-0.04em] leading-[0.94] transition-transform duration-200 ${
+          className={`font-mono-tabular font-bold tracking-[-0.02em] leading-[0.94] transition-transform duration-200 ${
             isLongFormat
-              ? 'text-[4.25rem] sm:text-[6.75rem] md:text-[8.5rem]'
-              : 'text-[5.5rem] sm:text-[9.25rem] md:text-[11.25rem]'
+              ? 'text-[4.5rem] sm:text-[7rem] md:text-[8.75rem]'
+              : 'text-[5.75rem] sm:text-[9.5rem] md:text-[11.5rem]'
           }`}
           aria-live="off"
         >

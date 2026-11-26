@@ -5,11 +5,13 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Minus,
+  Plus,
   Printer,
   Shield,
   Trash2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppView,
   PomodoroSettings,
@@ -26,6 +28,8 @@ interface AnalyticsPageProps {
   theme: ThemeMode;
   xpState: XpState;
   onActivateStreakShield?: (targetDayKey: string) => void;
+  onAddStudiedSession?: (minutes: number, completedAtIso: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   onNavigate: (view: AppView) => void;
   onClearHistory: () => void;
 }
@@ -38,6 +42,8 @@ interface ChartBucket {
   label: string;
   subLabel?: string;
   focusMinutes: number;
+  measuredMinutes: number;
+  manualMinutes: number;
   breakMinutes: number;
   focusCount: number;
   breakCount: number;
@@ -99,6 +105,8 @@ export function AnalyticsPage({
   theme,
   xpState,
   onActivateStreakShield,
+  onAddStudiedSession,
+  onDeleteSession,
   onNavigate,
   onClearHistory,
 }: AnalyticsPageProps) {
@@ -109,6 +117,35 @@ export function AnalyticsPage({
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('all');
   const [showAllLedger, setShowAllLedger] = useState(false);
   const [debriefCopied, setDebriefCopied] = useState(false);
+
+  const [showAddStudied, setShowAddStudied] = useState(false);
+  const [studiedMinutes, setStudiedMinutes] = useState(45);
+  const [studiedDate, setStudiedDate] = useState(() => toDayKey(new Date()));
+  const [studiedTime, setStudiedTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [studiedFeedback, setStudiedFeedback] = useState<string | null>(null);
+
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartContainerWidth, setChartContainerWidth] = useState(720);
+
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const updateWidth = () => {
+      const next = Math.round(el.getBoundingClientRect().width);
+      if (next > 0) setChartContainerWidth(next);
+    };
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setChartContainerWidth(Math.round(w));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const bwSolidBtn =
     'border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0';
@@ -150,6 +187,8 @@ export function AnalyticsPage({
           label: `${String(startHour).padStart(2, '0')}h`,
           subLabel: `${String(startHour).padStart(2, '0')}:00–${String(startHour + 2).padStart(2, '0')}:00`,
           focusMinutes: 0,
+          measuredMinutes: 0,
+          manualMinutes: 0,
           breakMinutes: 0,
           focusCount: 0,
           breakCount: 0,
@@ -162,6 +201,11 @@ export function AnalyticsPage({
         const mins = s.durationSeconds / 60;
         if (s.type === 'focus') {
           slots[slotIdx].focusMinutes += mins;
+          if (s.source === 'manual') {
+            slots[slotIdx].manualMinutes += mins;
+          } else {
+            slots[slotIdx].measuredMinutes += mins;
+          }
           slots[slotIdx].focusCount += 1;
         } else {
           slots[slotIdx].breakMinutes += mins;
@@ -215,6 +259,8 @@ export function AnalyticsPage({
           label: dayNames[idx],
           subLabel: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
           focusMinutes: 0,
+          measuredMinutes: 0,
+          manualMinutes: 0,
           breakMinutes: 0,
           focusCount: 0,
           breakCount: 0,
@@ -227,6 +273,11 @@ export function AnalyticsPage({
         const mins = s.durationSeconds / 60;
         if (s.type === 'focus') {
           days[dayIdx].focusMinutes += mins;
+          if (s.source === 'manual') {
+            days[dayIdx].manualMinutes += mins;
+          } else {
+            days[dayIdx].measuredMinutes += mins;
+          }
           days[dayIdx].focusCount += 1;
         } else {
           days[dayIdx].breakMinutes += mins;
@@ -279,6 +330,8 @@ export function AnalyticsPage({
         label: idx % 5 === 0 || idx === 29 ? String(d.getDate()) : '',
         subLabel: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
         focusMinutes: 0,
+        measuredMinutes: 0,
+        manualMinutes: 0,
         breakMinutes: 0,
         focusCount: 0,
         breakCount: 0,
@@ -292,6 +345,11 @@ export function AnalyticsPage({
       const mins = s.durationSeconds / 60;
       if (s.type === 'focus') {
         b.focusMinutes += mins;
+        if (s.source === 'manual') {
+          b.manualMinutes += mins;
+        } else {
+          b.measuredMinutes += mins;
+        }
         b.focusCount += 1;
       } else {
         b.breakMinutes += mins;
@@ -329,6 +387,12 @@ export function AnalyticsPage({
     const breakList = periodSessions.filter((s) => s.type === 'break');
 
     const focusMinutes = focusList.reduce((sum, s) => sum + s.durationSeconds / 60, 0);
+    const measuredFocusMinutes = focusList
+      .filter((s) => s.source !== 'manual')
+      .reduce((sum, s) => sum + s.durationSeconds / 60, 0);
+    const manualFocusMinutes = focusList
+      .filter((s) => s.source === 'manual')
+      .reduce((sum, s) => sum + s.durationSeconds / 60, 0);
     const breakMinutes = breakList.reduce((sum, s) => sum + s.durationSeconds / 60, 0);
     const totalMinutes = focusMinutes + breakMinutes;
     const focusSharePct = totalMinutes > 0 ? Math.round((focusMinutes / totalMinutes) * 100) : 0;
@@ -522,6 +586,8 @@ export function AnalyticsPage({
 
     return {
       focusMinutes,
+      measuredFocusMinutes,
+      manualFocusMinutes,
       breakMinutes,
       focusSessions: focusList.length,
       breakSessions: breakList.length,
@@ -609,11 +675,25 @@ export function AnalyticsPage({
     }
   };
 
+  const handleSubmitStudiedTime = () => {
+    if (!onAddStudiedSession) return;
+    const cleanMin = Math.max(1, Math.min(720, Math.round(studiedMinutes) || 1));
+    const datePart = studiedDate || toDayKey(new Date());
+    const timePart = studiedTime || '12:00';
+    const parsed = new Date(`${datePart}T${timePart}:00`);
+    const iso = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+    onAddStudiedSession(cleanMin, iso);
+    setShowAddStudied(false);
+    setStudiedFeedback(`Added ${cleanMin}m studied time`);
+    window.setTimeout(() => setStudiedFeedback(null), 2600);
+  };
+
   const handleExportCsv = () => {
     const header = [
       'id',
       'type',
       'mode',
+      'source',
       'duration_minutes',
       'distractions',
       'depth_rating',
@@ -626,6 +706,7 @@ export function AnalyticsPage({
       s.id,
       s.type,
       s.mode,
+      s.source ?? 'timer',
       (s.durationSeconds / 60).toFixed(2),
       s.distractions ?? 0,
       s.depthRating ?? '',
@@ -644,7 +725,7 @@ export function AnalyticsPage({
     URL.revokeObjectURL(url);
   };
 
-  // Chart Dimensions (Bold Full-Width Scale within compact frame)
+  // Chart Dimensions (1:1 Native Responsive Scale + Wide Dominant Monochrome Bars)
   const maxMinutesRaw = Math.max(
     15,
     ...buckets.map((b) => Math.max(b.focusMinutes, b.breakMinutes)),
@@ -653,20 +734,33 @@ export function AnalyticsPage({
   const chartMax = Math.ceil(maxMinutesRaw / stepUnit) * stepUnit;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((r) => Math.round(chartMax * r));
 
-  const svgWidth = 720;
-  const svgHeight = 380;
-  const padLeft = 42;
-  const padRight = 12;
-  const padTop = 44;
-  const padBottom = 46;
+  const svgWidth = Math.max(300, chartContainerWidth);
+  const isNarrowChart = svgWidth < 540;
+  const svgHeight = isNarrowChart ? 350 : 440;
+  const padLeft = isNarrowChart ? 38 : 46;
+  const padRight = 10;
+  const padTop = 46;
+  const padBottom = range === 'weekly' && !isNarrowChart ? 48 : 40;
   const plotW = svgWidth - padLeft - padRight;
   const plotH = svgHeight - padTop - padBottom;
   const slotW = plotW / buckets.length;
-  const barW =
-    range === 'monthly'
-      ? Math.max(8, slotW * 0.42)
-      : Math.min(44, Math.max(18, slotW * 0.42));
-  const barGap = range === 'monthly' ? 1.5 : Math.max(4, barW * 0.14);
+  const hasAnyBreaks = deepMetrics.breakMinutes > 0;
+
+  const focusBarW = hasAnyBreaks
+    ? range === 'monthly'
+      ? Math.max(5, Math.floor(slotW * 0.5))
+      : Math.min(64, Math.max(16, Math.floor(slotW * 0.54)))
+    : range === 'monthly'
+      ? Math.max(7, Math.floor(slotW * 0.78))
+      : Math.min(92, Math.max(22, Math.floor(slotW * 0.74)));
+
+  const breakBarW = hasAnyBreaks
+    ? range === 'monthly'
+      ? Math.max(3, Math.floor(slotW * 0.28))
+      : Math.min(34, Math.max(10, Math.floor(slotW * 0.28)))
+    : 0;
+
+  const barGap = hasAnyBreaks ? (range === 'monthly' ? 1.5 : Math.max(4, Math.round(slotW * 0.06))) : 0;
 
   const bucketDeltas = useMemo(() => {
     return buckets.map((b, idx) => {
@@ -706,17 +800,28 @@ export function AnalyticsPage({
   const gridColor = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)';
   const subtleInk = isDark ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.75)';
   const hatchPatternId = isDark ? 'break-hatch-page-dark' : 'break-hatch-page-light';
+  const manualPatternId = isDark ? 'manual-stripe-page-dark' : 'manual-stripe-page-light';
+
+  const getFocusBarX = (idx: number) => {
+    const centerX = padLeft + idx * slotW + slotW / 2;
+    if (!hasAnyBreaks) return centerX - focusBarW / 2;
+    const groupW = focusBarW + barGap + breakBarW;
+    return centerX - groupW / 2;
+  };
 
   const trendPathD = useMemo(() => {
     const pts = buckets.map((b, idx) => {
       const centerX = padLeft + idx * slotW + slotW / 2;
-      const focusX = centerX - barW - barGap / 2 + barW / 2;
+      const focusX = hasAnyBreaks
+        ? centerX - (focusBarW + barGap + breakBarW) / 2
+        : centerX - focusBarW / 2;
+      const focusCenterX = focusX + focusBarW / 2;
       const focusH = (b.focusMinutes / chartMax) * plotH;
-      const y = focusH > 0 ? padTop + plotH - Math.max(4, focusH) : padTop + plotH;
-      return `${idx === 0 ? 'M' : 'L'}${focusX.toFixed(1)},${y.toFixed(1)}`;
+      const y = focusH > 0 ? padTop + plotH - Math.max(8, focusH) : padTop + plotH;
+      return `${idx === 0 ? 'M' : 'L'}${focusCenterX.toFixed(1)},${y.toFixed(1)}`;
     });
     return pts.join(' ');
-  }, [barGap, barW, buckets, chartMax, padLeft, padTop, plotH, slotW]);
+  }, [barGap, breakBarW, buckets, chartMax, focusBarW, hasAnyBreaks, padLeft, padTop, plotH, slotW]);
 
   return (
     <div className="min-h-dvh w-full overflow-x-hidden bg-white dark:bg-black text-black dark:text-white transition-colors duration-200">
@@ -839,13 +944,13 @@ export function AnalyticsPage({
           </div>
         </div>
 
-        {/* 1. MAIN HERO VISUALIZATION: Full-Width Bar Chart with % Increase/Decrease Badges Inside Graph */}
+        {/* 1. MAIN HERO VISUALIZATION: Full-Width Bar Chart with Combined Studied Time & % Badges */}
         <section className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-6 space-y-4 shadow-[0_18px_48px_rgba(0,0,0,0.06)] dark:shadow-[0_18px_48px_rgba(255,255,255,0.05)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3.5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                  Focused Time vs. Break Sessions
+                  Studied Time vs. Break Sessions
                 </h2>
                 {periodDeltaPct !== null && (
                   <span
@@ -870,38 +975,194 @@ export function AnalyticsPage({
               </div>
               <p className="text-xs sm:text-sm text-black/70 dark:text-white/75 mt-1">
                 {range === 'daily'
-                  ? '2-hour intervals across 24 hours · Live ▲/▼ % shift per slot'
+                  ? 'Measured + already studied time across 24 hours · ▲/▼ % per slot'
                   : range === 'weekly'
-                    ? 'Monday through Sunday breakdown · Live ▲/▼ % shift day-over-day'
-                    : '30-day rolling volume · Hover any bar for exact day-over-day % delta'}
+                    ? 'Monday through Sunday combined studied total · ▲/▼ % day-over-day'
+                    : '30-day rolling combined volume · Tap or hover any bar for % delta'}
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-4 h-4 bg-black dark:bg-white border border-black dark:border-white rounded-[3px]" />
-                <span>Focused ({formatDurationMinutes(deepMetrics.focusMinutes)})</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-block w-4 h-4 border-2 border-black dark:border-white rounded-[3px]"
-                  style={{
-                    backgroundImage: isDark
-                      ? 'repeating-linear-gradient(-45deg, #ffffff, #ffffff 1.5px, transparent 1.5px, transparent 4.5px)'
-                      : 'repeating-linear-gradient(-45deg, #000000, #000000 1.5px, transparent 1.5px, transparent 4.5px)',
-                  }}
-                />
-                <span>Breaks ({formatDurationMinutes(deepMetrics.breakMinutes)})</span>
+            <div className="flex flex-wrap items-center gap-3">
+              {onAddStudiedSession && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddStudied((prev) => !prev)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg ${
+                    showAddStudied ? bwOptionBtn(false) : bwSolidBtn
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{showAddStudied ? 'Close Form' : 'Add Studied Time'}</span>
+                </button>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-3.5 h-3.5 bg-black dark:bg-white border border-black dark:border-white rounded-[3px]" />
+                  <span>Measured ({formatDurationMinutes(deepMetrics.measuredFocusMinutes)})</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block w-3.5 h-3.5 border-2 border-black dark:border-white rounded-[3px]"
+                    style={{
+                      backgroundImage: isDark
+                        ? 'repeating-linear-gradient(0deg, #ffffff, #ffffff 2px, transparent 2px, transparent 5px)'
+                        : 'repeating-linear-gradient(0deg, #000000, #000000 2px, transparent 2px, transparent 5px)',
+                    }}
+                  />
+                  <span>Added ({formatDurationMinutes(deepMetrics.manualFocusMinutes)})</span>
+                </div>
+                {hasAnyBreaks && (
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-3.5 h-3.5 border-2 border-black dark:border-white rounded-[3px]"
+                      style={{
+                        backgroundImage: isDark
+                          ? 'repeating-linear-gradient(-45deg, #ffffff, #ffffff 1.5px, transparent 1.5px, transparent 4.5px)'
+                          : 'repeating-linear-gradient(-45deg, #000000, #000000 1.5px, transparent 1.5px, transparent 4.5px)',
+                      }}
+                    />
+                    <span>Breaks ({formatDurationMinutes(deepMetrics.breakMinutes)})</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="relative w-full">
+          {studiedFeedback && (
+            <div className="rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black px-3.5 py-2 text-xs font-bold flex items-center justify-between">
+              <span>{studiedFeedback}</span>
+              <span>Combined in Chart</span>
+            </div>
+          )}
+
+          {showAddStudied && onAddStudiedSession && (
+            <div className="rounded-xl border-2 border-black dark:border-white p-4 space-y-4 bg-white dark:bg-black">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold">Add Already Studied Time</h3>
+                  <p className="text-xs text-black/70 dark:text-white/75">
+                    Stacks directly onto your measured focus bars in the chart.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[15, 30, 45, 60, 90, 120].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setStudiedMinutes(preset)}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-mono-tabular ${bwOptionBtn(
+                        studiedMinutes === preset,
+                      )}`}
+                    >
+                      {preset}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                    Duration (Minutes)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-label="Decrease studied minutes"
+                      onClick={() => setStudiedMinutes((v) => Math.max(1, v - 5))}
+                      className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={studiedMinutes}
+                      onChange={(e) =>
+                        setStudiedMinutes(
+                          Math.max(1, Math.min(720, Number(e.target.value) || 1)),
+                        )
+                      }
+                      className="min-w-0 flex-1 h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-center text-sm font-bold font-mono-tabular"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Increase studied minutes"
+                      onClick={() => setStudiedMinutes((v) => Math.min(720, v + 5))}
+                      className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider">
+                      Date
+                    </label>
+                    <div className="flex items-center gap-2 text-[11px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setStudiedDate(toDayKey(new Date()))}
+                        className="underline cursor-pointer"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const y = new Date();
+                          y.setDate(y.getDate() - 1);
+                          setStudiedDate(toDayKey(y));
+                        }}
+                        className="underline cursor-pointer"
+                      >
+                        Yesterday
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="date"
+                    value={studiedDate}
+                    max={toDayKey(new Date())}
+                    onChange={(e) => setStudiedDate(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
+                  />
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                      Time
+                    </label>
+                    <input
+                      type="time"
+                      value={studiedTime}
+                      onChange={(e) => setStudiedTime(e.target.value)}
+                      className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSubmitStudiedTime}
+                    className={`h-9 px-4 text-xs font-bold rounded-lg ${bwSolidBtn}`}
+                  >
+                    Add to Chart
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={chartContainerRef} className="relative w-full">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
               className="block w-full h-auto"
               role="img"
-              aria-label="Main bar chart comparing focused time and break sessions with percentage change badges"
+              aria-label="Main bar chart comparing studied time and break sessions with percentage change badges"
             >
               <defs>
                 <pattern
@@ -920,6 +1181,22 @@ export function AnalyticsPage({
                     strokeWidth="2.2"
                   />
                 </pattern>
+                <pattern
+                  id={manualPatternId}
+                  width="6"
+                  height="6"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <rect width="6" height="6" fill={invertedInk} />
+                  <line
+                    x1="0"
+                    y1="2"
+                    x2="6"
+                    y2="2"
+                    stroke={inkColor}
+                    strokeWidth="2.4"
+                  />
+                </pattern>
               </defs>
 
               {/* Horizontal Gridlines & Y-Axis */}
@@ -933,15 +1210,15 @@ export function AnalyticsPage({
                       x2={svgWidth - padRight}
                       y2={y}
                       stroke={val === 0 ? inkColor : gridColor}
-                      strokeWidth={val === 0 ? 2 : 1}
+                      strokeWidth={val === 0 ? 2.2 : 1}
                       strokeDasharray={val === 0 ? undefined : '3 5'}
                     />
                     <text
-                      x={padLeft - 8}
+                      x={padLeft - 7}
                       y={y + 4}
                       textAnchor="end"
                       fill={subtleInk}
-                      fontSize="12"
+                      fontSize={isNarrowChart ? '11' : '12'}
                       fontWeight="700"
                       fontFamily="var(--font-mono)"
                     >
@@ -951,7 +1228,7 @@ export function AnalyticsPage({
                 );
               })}
 
-              {/* Subtle Trajectory Line connecting Focus Bar Crowns */}
+              {/* Subtle Trajectory Line connecting Studied Bar Crowns */}
               {deepMetrics.focusMinutes > 0 && (
                 <path
                   d={trendPathD}
@@ -967,15 +1244,28 @@ export function AnalyticsPage({
                 const centerX = padLeft + idx * slotW + slotW / 2;
                 const focusH = (bucket.focusMinutes / chartMax) * plotH;
                 const breakH = (bucket.breakMinutes / chartMax) * plotH;
-                const focusX = centerX - barW - barGap / 2;
-                const breakX = centerX + barGap / 2;
+                const focusX = getFocusBarX(idx);
+                const breakX = focusX + focusBarW + barGap;
                 const baseY = padTop + plotH;
                 const isHovered = hoveredIndex === idx;
-                const renderedFocusH = focusH > 0 ? Math.max(10, focusH) : 0;
+
+                const renderedFocusH = focusH > 0 ? Math.max(12, focusH) : 0;
                 const renderedBreakH = breakH > 0 ? Math.max(10, breakH) : 0;
                 const focusBarY = focusH > 0 ? baseY - renderedFocusH : baseY;
-                const delta = bucketDeltas[idx];
 
+                const measuredRatio =
+                  bucket.focusMinutes > 0 ? bucket.measuredMinutes / bucket.focusMinutes : 1;
+                const measuredPartH =
+                  bucket.measuredMinutes > 0
+                    ? bucket.manualMinutes > 0
+                      ? Math.max(4, Math.round(renderedFocusH * measuredRatio))
+                      : renderedFocusH
+                    : 0;
+                const manualPartH = Math.max(0, renderedFocusH - measuredPartH);
+                const manualBarY = focusBarY;
+                const measuredBarY = baseY - measuredPartH;
+
+                const delta = bucketDeltas[idx];
                 const showDeltaInsideGraph =
                   delta !== null &&
                   (range !== 'monthly' || isHovered || idx === peakBucketIdx);
@@ -991,11 +1281,11 @@ export function AnalyticsPage({
                         ? `▼ ${delta}%`
                         : '0%';
 
-                const badgeWidth = Math.max(50, deltaText.length * 7 + 14);
+                const badgeWidth = Math.max(isNarrowChart ? 42 : 50, deltaText.length * 6.8 + 12);
                 const badgeHeight = 22;
                 const breakBarY = breakH > 0 ? baseY - renderedBreakH : baseY;
                 const anchorTopY = focusH > 0 ? focusBarY : breakBarY;
-                const badgeCenterX = focusH > 0 ? focusX + barW / 2 : centerX;
+                const badgeCenterX = focusH > 0 ? focusX + focusBarW / 2 : centerX;
                 const clampedBadgeX = Math.max(
                   padLeft + badgeWidth / 2,
                   Math.min(svgWidth - padRight - badgeWidth / 2, badgeCenterX),
@@ -1003,42 +1293,76 @@ export function AnalyticsPage({
                 const badgeBottomY = Math.max(padTop - 8, anchorTopY - 10);
                 const badgeTopY = badgeBottomY - badgeHeight;
 
+                const barOpacity = hoveredIndex === null || isHovered ? 1 : 0.58;
+                const barRadius = range === 'monthly' ? 2 : 5;
+
                 return (
                   <g
                     key={bucket.key}
                     onMouseEnter={() => setHoveredIndex(idx)}
                     onMouseLeave={() => setHoveredIndex(null)}
+                    onClick={() => setHoveredIndex(hoveredIndex === idx ? null : idx)}
                     className="cursor-pointer"
                   >
+                    {/* Subtle Full-Height Column Slot Guide */}
                     <rect
-                      x={padLeft + idx * slotW + 1}
-                      y={padTop - 30}
-                      width={Math.max(4, slotW - 2)}
-                      height={plotH + 30}
+                      x={padLeft + idx * slotW + 2}
+                      y={padTop}
+                      width={Math.max(4, slotW - 4)}
+                      height={plotH}
                       rx="6"
                       fill={inkColor}
-                      fillOpacity={isHovered ? 0.065 : 0}
+                      fillOpacity={isHovered ? 0.08 : range !== 'monthly' ? 0.035 : 0}
                     />
 
-                    {/* Solid High-Contrast Focus Bar */}
-                    <rect
-                      x={focusX}
-                      y={focusBarY}
-                      width={barW}
-                      height={renderedFocusH}
-                      rx={range === 'monthly' ? 2 : 4}
-                      fill={inkColor}
-                      fillOpacity={hoveredIndex === null || isHovered ? 1 : 0.58}
-                    />
+                    {/* Solid Measured Focus Segment (Bottom) */}
+                    {measuredPartH > 0 && (
+                      <rect
+                        x={focusX}
+                        y={measuredBarY}
+                        width={focusBarW}
+                        height={measuredPartH}
+                        rx={manualPartH > 0 ? 0 : barRadius}
+                        fill={inkColor}
+                        fillOpacity={barOpacity}
+                      />
+                    )}
 
-                    {/* Inverted Minutes Readout Inside Tall Focus Bars */}
-                    {range !== 'monthly' && bucket.focusMinutes >= 1 && renderedFocusH >= 28 && (
+                    {/* Added Studied Time Segment (Stacked Top with Crisp Monochrome Horizontal Stripes) */}
+                    {manualPartH > 0 && (
+                      <rect
+                        x={focusX}
+                        y={manualBarY}
+                        width={focusBarW}
+                        height={manualPartH}
+                        rx={barRadius}
+                        fill={`url(#${manualPatternId})`}
+                        fillOpacity={barOpacity}
+                        stroke={inkColor}
+                        strokeWidth={range === 'monthly' ? 1.2 : 2}
+                      />
+                    )}
+
+                    {/* Divider line when Measured + Added stack in the same bar */}
+                    {measuredPartH > 0 && manualPartH > 0 && (
+                      <line
+                        x1={focusX}
+                        y1={measuredBarY}
+                        x2={focusX + focusBarW}
+                        y2={measuredBarY}
+                        stroke={inkColor}
+                        strokeWidth="2"
+                      />
+                    )}
+
+                    {/* Bold Minutes Readout Inside Tall Measured Bars */}
+                    {range !== 'monthly' && bucket.focusMinutes >= 1 && measuredPartH >= 26 && (
                       <text
-                        x={focusX + barW / 2}
-                        y={focusBarY + 17}
+                        x={focusX + focusBarW / 2}
+                        y={measuredBarY + 18}
                         textAnchor="middle"
                         fill={invertedInk}
-                        fontSize="11.5"
+                        fontSize={isNarrowChart ? '10.5' : '12'}
                         fontWeight="800"
                         fontFamily="var(--font-mono)"
                       >
@@ -1046,34 +1370,64 @@ export function AnalyticsPage({
                       </text>
                     )}
 
-                    {/* Hatched Break Bar */}
-                    {breakH > 0 ? (
-                      <rect
-                        x={breakX}
-                        y={breakBarY}
-                        width={barW}
-                        height={renderedBreakH}
-                        rx={range === 'monthly' ? 2 : 4}
-                        fill={`url(#${hatchPatternId})`}
-                        stroke={inkColor}
-                        strokeWidth="1.8"
-                        strokeOpacity={hoveredIndex === null || isHovered ? 1 : 0.58}
-                      />
-                    ) : (
-                      <rect
-                        x={breakX}
-                        y={baseY - 2}
-                        width={barW}
-                        height={2}
-                        fill={inkColor}
-                        fillOpacity="0.18"
-                      />
-                    )}
+                    {/* Inverted Minutes Pill Inside Tall Manual-Only Bars */}
+                    {range !== 'monthly' &&
+                      bucket.focusMinutes >= 1 &&
+                      measuredPartH < 26 &&
+                      manualPartH >= 26 && (
+                        <g>
+                          <rect
+                            x={focusX + focusBarW / 2 - Math.min(focusBarW / 2 - 2, 18)}
+                            y={manualBarY + 5}
+                            width={Math.min(focusBarW - 4, 36)}
+                            height={17}
+                            rx="4"
+                            fill={inkColor}
+                          />
+                          <text
+                            x={focusX + focusBarW / 2}
+                            y={manualBarY + 14}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={invertedInk}
+                            fontSize={isNarrowChart ? '10' : '11'}
+                            fontWeight="800"
+                            fontFamily="var(--font-mono)"
+                          >
+                            {Math.round(bucket.focusMinutes)}m
+                          </text>
+                        </g>
+                      )}
 
-                    {/* Trajectory Anchor Dot on Focus Crown */}
+                    {/* Hatched Break Bar (shown when breaks exist) */}
+                    {hasAnyBreaks &&
+                      (breakH > 0 ? (
+                        <rect
+                          x={breakX}
+                          y={breakBarY}
+                          width={breakBarW}
+                          height={renderedBreakH}
+                          rx={range === 'monthly' ? 2 : 4}
+                          fill={`url(#${hatchPatternId})`}
+                          stroke={inkColor}
+                          strokeWidth="1.8"
+                          strokeOpacity={barOpacity}
+                        />
+                      ) : (
+                        <rect
+                          x={breakX}
+                          y={baseY - 2}
+                          width={breakBarW}
+                          height={2}
+                          fill={inkColor}
+                          fillOpacity="0.18"
+                        />
+                      ))}
+
+                    {/* Trajectory Anchor Dot on Studied Bar Crown */}
                     {focusH > 0 && (
                       <circle
-                        cx={focusX + barW / 2}
+                        cx={focusX + focusBarW / 2}
                         cy={focusBarY}
                         r={isHovered ? 4.5 : 3.2}
                         fill={invertedInk}
@@ -1087,9 +1441,9 @@ export function AnalyticsPage({
                       <g>
                         {focusH > 0 && (
                           <line
-                            x1={focusX + barW / 2}
+                            x1={focusX + focusBarW / 2}
                             y1={badgeBottomY}
-                            x2={focusX + barW / 2}
+                            x2={focusX + focusBarW / 2}
                             y2={focusBarY - 3}
                             stroke={inkColor}
                             strokeOpacity="0.45"
@@ -1112,7 +1466,7 @@ export function AnalyticsPage({
                           textAnchor="middle"
                           dominantBaseline="central"
                           fill={isPositive ? invertedInk : inkColor}
-                          fontSize="10.5"
+                          fontSize={isNarrowChart ? '9.5' : '10.5'}
                           fontWeight="800"
                           fontFamily="var(--font-mono)"
                         >
@@ -1128,14 +1482,16 @@ export function AnalyticsPage({
                         y={baseY + 21}
                         textAnchor="middle"
                         fill={isHovered ? inkColor : subtleInk}
-                        fontSize="12.5"
+                        fontSize={isNarrowChart && range === 'daily' ? '10' : '12'}
                         fontWeight="700"
                         fontFamily="var(--font-sans)"
                       >
-                        {bucket.label}
+                        {isNarrowChart && range === 'daily' && idx % 2 === 1
+                          ? ''
+                          : bucket.label}
                       </text>
                     )}
-                    {range === 'weekly' && bucket.subLabel && (
+                    {range === 'weekly' && !isNarrowChart && bucket.subLabel && (
                       <text
                         x={centerX}
                         y={baseY + 38}
@@ -1154,8 +1510,18 @@ export function AnalyticsPage({
 
             {periodSessions.length === 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-                <div className="rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black px-5 py-2.5 text-xs font-bold text-center shadow-[0_12px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_rgba(255,255,255,0.06)]">
-                  No logs in this window yet — complete a focus session to chart it
+                <div className="pointer-events-auto rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black px-5 py-3 text-xs font-bold text-center shadow-[0_12px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_rgba(255,255,255,0.06)] space-y-2.5">
+                  <div>No logs in this window yet — complete a focus session or add studied time</div>
+                  {onAddStudiedSession && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddStudied(true)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg ${bwSolidBtn}`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Studied Time</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1188,8 +1554,10 @@ export function AnalyticsPage({
                   </div>
                   <div className="flex flex-wrap items-center gap-4 font-mono-tabular">
                     <span>
-                      Focused: <strong>{Math.round(buckets[hoveredIndex].focusMinutes)}m</strong> (
-                      {buckets[hoveredIndex].focusCount})
+                      Studied: <strong>{Math.round(buckets[hoveredIndex].focusMinutes)}m</strong>
+                      {buckets[hoveredIndex].manualMinutes > 0
+                        ? ` (${Math.round(buckets[hoveredIndex].measuredMinutes)}m measured + ${Math.round(buckets[hoveredIndex].manualMinutes)}m added)`
+                        : ` (${buckets[hoveredIndex].focusCount})`}
                     </span>
                     <span>
                       Breaks: <strong>{Math.round(buckets[hoveredIndex].breakMinutes)}m</strong> (
@@ -1199,7 +1567,7 @@ export function AnalyticsPage({
                 </>
               ) : (
                 <span className="font-medium text-black/75 dark:text-white/80">
-                  Hover any column to inspect exact focused minutes, break counts, and % change.
+                  Tap or hover any bar to inspect measured + added studied minutes and % change.
                 </span>
               )}
             </div>
@@ -1977,10 +2345,11 @@ export function AnalyticsPage({
               <div className="md:hidden divide-y divide-black/15 dark:divide-white/20">
                 {(showAllLedger ? filteredLedger : filteredLedger.slice(0, 40)).map((s) => {
                   const dt = new Date(s.completedAt);
+                  const isManual = s.source === 'manual';
                   return (
                     <div key={s.id} className="py-3 space-y-1.5 text-xs">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-2 font-bold">
+                        <span className="inline-flex flex-wrap items-center gap-2 font-bold">
                           <span
                             className={`inline-block w-2.5 h-2.5 rounded-[2px] ${
                               s.type === 'focus'
@@ -1991,12 +2360,33 @@ export function AnalyticsPage({
                           <span>{s.type === 'focus' ? 'Focus' : 'Break'}</span>
                           <span className="opacity-45">·</span>
                           <span className="font-semibold text-black/80 dark:text-white/85">
-                            {s.mode === 'countdown' ? 'Countdown' : 'Count Up'}
+                            {isManual
+                              ? 'Added Studied'
+                              : s.mode === 'countdown'
+                                ? 'Countdown'
+                                : 'Count Up'}
                           </span>
+                          {isManual && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded border border-black dark:border-white">
+                              Added
+                            </span>
+                          )}
                         </span>
-                        <span className="font-mono-tabular font-bold">
-                          {formatDurationMinutes(s.durationSeconds / 60)}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono-tabular font-bold">
+                            {formatDurationMinutes(s.durationSeconds / 60)}
+                          </span>
+                          {onDeleteSession && (
+                            <button
+                              type="button"
+                              aria-label="Delete session entry"
+                              onClick={() => onDeleteSession(s.id)}
+                              className="p-1 rounded border border-black/30 dark:border-white/30 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-black/75 dark:text-white/80">
@@ -2039,11 +2429,13 @@ export function AnalyticsPage({
                       <th className="py-2.5 pr-4 font-bold">Presence</th>
                       <th className="py-2.5 pr-4 font-bold">Completed</th>
                       <th className="py-2.5 text-right font-bold">Duration</th>
+                      {onDeleteSession && <th className="py-2.5 pl-3 text-right font-bold" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/15 dark:divide-white/20">
                     {(showAllLedger ? filteredLedger : filteredLedger.slice(0, 40)).map((s) => {
                       const dt = new Date(s.completedAt);
+                      const isManual = s.source === 'manual';
                       const checkTotal = s.presenceChecks
                         ? s.presenceChecks.confirmed + s.presenceChecks.missed
                         : 0;
@@ -2062,10 +2454,19 @@ export function AnalyticsPage({
                                 }`}
                               />
                               {s.type === 'focus' ? 'Focus' : 'Break'}
+                              {isManual && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded border border-black dark:border-white">
+                                  Added
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td className="py-2.5 pr-4 text-black/80 dark:text-white/85 whitespace-nowrap">
-                            {s.mode === 'countdown' ? 'Countdown' : 'Count Up'}
+                            {isManual
+                              ? 'Added Studied'
+                              : s.mode === 'countdown'
+                                ? 'Countdown'
+                                : 'Count Up'}
                           </td>
                           <td className="py-2.5 pr-4 font-mono-tabular text-black/80 dark:text-white/80">
                             {typeof s.distractions === 'number' ? s.distractions : '—'}
@@ -2088,6 +2489,18 @@ export function AnalyticsPage({
                           <td className="py-2.5 text-right font-mono-tabular font-bold whitespace-nowrap">
                             {formatDurationMinutes(s.durationSeconds / 60)}
                           </td>
+                          {onDeleteSession && (
+                            <td className="py-2.5 pl-3 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                aria-label="Delete session entry"
+                                onClick={() => onDeleteSession(s.id)}
+                                className="p-1 rounded border border-black/30 dark:border-white/30 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

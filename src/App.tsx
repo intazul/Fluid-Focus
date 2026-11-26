@@ -1079,6 +1079,37 @@ export default function App() {
     saveXpState(clearedXp);
   };
 
+  const handleAddStudiedSession = useCallback(
+    (minutes: number, completedAtIso: string) => {
+      const cleanMin = Math.max(1, Math.min(720, Math.round(minutes)));
+      const newRecord: SessionRecord = {
+        id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: 'focus',
+        mode: 'countup',
+        source: 'manual',
+        durationSeconds: cleanMin * 60,
+        completedAt: completedAtIso,
+        xpEarned: 0,
+      };
+      setSessions((prev) => {
+        const next = [newRecord, ...prev].sort(
+          (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+        );
+        saveSessions(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleDeleteSession = useCallback((sessionId: string) => {
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== sessionId);
+      saveSessions(next);
+      return next;
+    });
+  }, []);
+
   const chromeOpacityClass = isZenDimmed ? 'opacity-15 hover:opacity-100' : 'opacity-100';
   const xpProgressPct = Math.min(
     100,
@@ -1102,6 +1133,8 @@ export default function App() {
               theme={theme}
               xpState={xpState}
               onActivateStreakShield={handleActivateStreakShield}
+              onAddStudiedSession={handleAddStudiedSession}
+              onDeleteSession={handleDeleteSession}
               onNavigate={setView}
               onClearHistory={handleClearHistory}
             />

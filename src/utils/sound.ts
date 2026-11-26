@@ -391,6 +391,45 @@ function triggerForestBirdCall(ctx: AudioContext, destination: AudioNode): void 
   });
 }
 
+function triggerMildClockTick(
+  ctx: AudioContext,
+  destination: AudioNode,
+  isTock: boolean,
+): void {
+  const now = ctx.currentTime;
+
+  // Mild damped analog escapement click (alternating warm tick & softer tock)
+  const bodyOsc = ctx.createOscillator();
+  const bodyGain = ctx.createGain();
+  bodyOsc.type = 'triangle';
+  bodyOsc.frequency.setValueAtTime(isTock ? 310 : 390, now);
+  bodyOsc.frequency.exponentialRampToValueAtTime(isTock ? 140 : 175, now + 0.022);
+
+  bodyGain.gain.setValueAtTime(0.0001, now);
+  bodyGain.gain.linearRampToValueAtTime(isTock ? 0.14 : 0.18, now + 0.002);
+  bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
+
+  const clickOsc = ctx.createOscillator();
+  const clickGain = ctx.createGain();
+  clickOsc.type = 'sine';
+  clickOsc.frequency.setValueAtTime(isTock ? 880 : 1120, now);
+  clickOsc.frequency.exponentialRampToValueAtTime(isTock ? 420 : 540, now + 0.012);
+
+  clickGain.gain.setValueAtTime(0.0001, now);
+  clickGain.gain.linearRampToValueAtTime(isTock ? 0.065 : 0.095, now + 0.0015);
+  clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.016);
+
+  bodyOsc.connect(bodyGain);
+  bodyGain.connect(destination);
+  clickOsc.connect(clickGain);
+  clickGain.connect(destination);
+
+  bodyOsc.start(now);
+  clickOsc.start(now);
+  bodyOsc.stop(now + 0.035);
+  clickOsc.stop(now + 0.024);
+}
+
 export function syncAmbientNoise(
   mode: AmbientNoiseMode,
   isRunning: boolean,
@@ -411,7 +450,9 @@ export function syncAmbientNoise(
       ? Math.max(0.005, Math.min(1, volumePercent / 100)) * 0.065
       : mode === 'rainBirds'
         ? Math.max(0.01, Math.min(1, volumePercent / 100)) * 0.24
-        : Math.max(0.005, Math.min(1, volumePercent / 100)) * 0.16;
+        : mode === 'clockTick'
+          ? Math.max(0.01, Math.min(1, volumePercent / 100)) * 0.22
+          : Math.max(0.005, Math.min(1, volumePercent / 100)) * 0.16;
 
   if (activeAmbientMode === mode && ambientGain) {
     ambientGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.08);
@@ -425,6 +466,32 @@ export function syncAmbientNoise(
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.65);
     gain.connect(ctx.destination);
+
+    if (mode === 'clockTick') {
+      const tickFilter = ctx.createBiquadFilter();
+      tickFilter.type = 'lowpass';
+      tickFilter.frequency.value = 1150;
+      tickFilter.Q.value = 0.5;
+      tickFilter.connect(gain);
+
+      ambientNodes.push(tickFilter);
+      ambientGain = gain;
+      activeAmbientMode = mode;
+
+      let beatIndex = 0;
+      const scheduleTick = () => {
+        if (activeAmbientMode !== 'clockTick') return;
+        triggerMildClockTick(ctx, tickFilter, beatIndex % 2 === 1);
+        beatIndex += 1;
+        const id = window.setTimeout(scheduleTick, 1000);
+        ambientTimers.push(id);
+      };
+      // Trigger immediately with soft warm envelope and continue every 1s
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(targetGain, ctx.currentTime);
+      scheduleTick();
+      return;
+    }
 
     if (mode === 'gamma40') {
       const oscL = ctx.createOscillator();

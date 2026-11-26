@@ -10,7 +10,13 @@ export type SoundProfile = 'bell' | 'pulse' | 'double';
 
 export type SweepMode = 'smooth' | 'highbeat' | 'tick';
 
-export type AmbientNoiseMode = 'off' | 'rainBirds' | 'rain' | 'brown' | 'gamma40';
+export type AmbientNoiseMode =
+  | 'off'
+  | 'rainBirds'
+  | 'rain'
+  | 'brown'
+  | 'gamma40'
+  | 'clockTick';
 
 export type AppView = 'dashboard' | 'analytics' | 'settings' | 'edit';
 
@@ -83,6 +89,7 @@ export interface SessionRecord {
   id: string;
   type: 'focus' | 'break';
   mode: TimerMode;
+  source?: 'timer' | 'manual';
   durationSeconds: number;
   completedAt: string;
   distractions?: number;
