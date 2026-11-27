@@ -77,6 +77,8 @@ export interface PomodoroSettings {
   milestoneRipplesEnabled: boolean;
   presenceCheckEnabled: boolean;
   presenceIntervalMinutes: number; // >= 30 minutes
+  hapticsEnabled: boolean;
+  oledFocusModeEnabled: boolean;
   customPresets: CustomPreset[];
 }
 
@@ -177,5 +179,7 @@ export const DEFAULT_SETTINGS: PomodoroSettings = {
   milestoneRipplesEnabled: true,
   presenceCheckEnabled: true,
   presenceIntervalMinutes: 30,
+  hapticsEnabled: true,
+  oledFocusModeEnabled: false,
   customPresets: DEFAULT_CUSTOM_PRESETS,
 };

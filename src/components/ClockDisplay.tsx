@@ -4,6 +4,7 @@ import { ClockFormat, PhaseType, ThemeMode, TimerMode } from '../types/pomodoro'
 
 interface ClockDisplayProps {
   format: ClockFormat;
+  onChangeFormat?: (format: ClockFormat) => void;
   mode: TimerMode;
   phase: PhaseType;
   theme: ThemeMode;
@@ -33,6 +34,7 @@ interface ClockDisplayProps {
   milestoneRipplesEnabled: boolean;
   presencePending: boolean;
   presenceConfirmedCount: number;
+  isOledDimmed?: boolean;
   onMilestoneQuarter?: (quarterIndex: number) => void;
 }
 
@@ -68,6 +70,53 @@ function formatClockMinutes(totalMinutes: number): string {
   const h = Math.floor(rounded / 60);
   const m = rounded % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function RollingDigitText({
+  digits,
+  className,
+}: {
+  digits: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center ${className ?? ''}`}
+      style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum" 1' }}
+    >
+      {digits.split('').map((ch, idx) => {
+        if (ch === ':') {
+          return (
+            <span
+              key={`sep-${idx}`}
+              className="inline-flex items-center justify-center w-[0.34em] opacity-80 -translate-y-[0.04em]"
+            >
+              :
+            </span>
+          );
+        }
+        return (
+          <span
+            key={`slot-${idx}`}
+            className="relative inline-flex items-center justify-center w-[0.6em] h-[1.06em] overflow-hidden"
+          >
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={`${idx}-${ch}`}
+                initial={{ y: '42%', opacity: 0 }}
+                animate={{ y: '0%', opacity: 1 }}
+                exit={{ y: '-42%', opacity: 0 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                className="inline-block will-change-transform"
+              >
+                {ch}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 function getPhaseLabel(
@@ -341,7 +390,7 @@ function ClockFaceLayer({
         />
       </g>
 
-      {/* Big, High-Clarity Upright Typography Centered in Open Space */}
+      {/* Big, High-Clarity Upright Odometer Typography Centered in Open Space */}
       {showDialCaption && (
         <text
           x={CX}
@@ -359,20 +408,66 @@ function ClockFaceLayer({
         </text>
       )}
 
-      <text
-        x={CX}
-        y={showDialCaption ? CY - 2 : CY}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill={ink}
-        fontSize={isLongFormat ? '50' : '78'}
-        fontWeight="700"
-        letterSpacing="-0.5"
-        fontFamily="var(--font-mono)"
-        style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum" 1' }}
-      >
-        {digits}
-      </text>
+      {(() => {
+        const fontSize = isLongFormat ? 50 : 78;
+        const digitAdvance = isLongFormat ? 29.5 : 46;
+        const colonAdvance = isLongFormat ? 16 : 24;
+        const chars = digits.split('');
+        const widths = chars.map((c) => (c === ':' ? colonAdvance : digitAdvance));
+        const totalW = widths.reduce((a, b) => a + b, 0);
+        let cursorX = CX - totalW / 2;
+        const textY = showDialCaption ? CY - 2 : CY;
+
+        return (
+          <g>
+            {chars.map((ch, idx) => {
+              const w = widths[idx];
+              const charX = cursorX + w / 2;
+              cursorX += w;
+              if (ch === ':') {
+                return (
+                  <text
+                    key={`svg-sep-${idx}`}
+                    x={charX}
+                    y={textY - 3}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={ink}
+                    fillOpacity="0.82"
+                    fontSize={fontSize}
+                    fontWeight="700"
+                    fontFamily="var(--font-mono)"
+                  >
+                    :
+                  </text>
+                );
+              }
+              return (
+                <AnimatePresence mode="popLayout" initial={false} key={`svg-slot-${idx}`}>
+                  <motion.text
+                    key={`svg-char-${idx}-${ch}`}
+                    x={charX}
+                    y={textY}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={ink}
+                    fontSize={fontSize}
+                    fontWeight="700"
+                    fontFamily="var(--font-mono)"
+                    style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum" 1' }}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    {ch}
+                  </motion.text>
+                </AnimatePresence>
+              );
+            })}
+          </g>
+        );
+      })()}
 
       {showDialCaption && (
         <text
@@ -417,6 +512,7 @@ function ClockFaceLayer({
 
 export function ClockDisplay({
   format,
+  onChangeFormat,
   mode,
   phase,
   theme,
@@ -446,6 +542,7 @@ export function ClockDisplay({
   milestoneRipplesEnabled,
   presencePending,
   presenceConfirmedCount,
+  isOledDimmed = false,
   onMilestoneQuarter,
 }: ClockDisplayProps) {
   const digits = formatDigits(displaySeconds);
@@ -493,7 +590,40 @@ export function ClockDisplay({
 
   const [radialPulseScale, setRadialPulseScale] = useState(1);
   const [rippleKey, setRippleKey] = useState(0);
+  const [swipeDir, setSwipeDir] = useState<1 | -1>(1);
   const lastMilestoneRef = useRef<number>(0);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const didSwipeRef = useRef(false);
+
+  const FORMAT_ORDER: ClockFormat[] = ['digital', 'both', 'analogue'];
+
+  const handleClockPointerDown = (e: React.PointerEvent) => {
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    didSwipeRef.current = false;
+  };
+
+  const handleClockPointerUp = (e: React.PointerEvent) => {
+    if (!pointerStartRef.current || !onChangeFormat) return;
+    const dx = e.clientX - pointerStartRef.current.x;
+    const dy = e.clientY - pointerStartRef.current.y;
+    pointerStartRef.current = null;
+    if (Math.abs(dx) >= 44 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      didSwipeRef.current = true;
+      const curIdx = FORMAT_ORDER.indexOf(format);
+      const step = dx < 0 ? 1 : -1;
+      setSwipeDir(step === 1 ? 1 : -1);
+      const nextIdx = (curIdx + step + FORMAT_ORDER.length) % FORMAT_ORDER.length;
+      onChangeFormat(FORMAT_ORDER[nextIdx]);
+    }
+  };
+
+  const handleClockClick = () => {
+    if (didSwipeRef.current) {
+      didSwipeRef.current = false;
+      return;
+    }
+    onToggleRun();
+  };
 
   useEffect(() => {
     setRadialPulseScale(1.03);
@@ -675,102 +805,162 @@ export function ClockDisplay({
 
   const isEclipseActive = eclipseModeEnabled && phase === 'focus' && clampedProgress >= 0.5;
 
-  // Digital-Only Mode: unboxed minimalist typographic horology with precision progress rail
+  const renderFormatSwitcherDots = () => {
+    if (!onChangeFormat) return null;
+    const items: { id: ClockFormat; label: string }[] = [
+      { id: 'digital', label: 'Digital' },
+      { id: 'both', label: 'Hybrid' },
+      { id: 'analogue', label: 'Analogue' },
+    ];
+    return (
+      <div
+        className={`mt-3 flex items-center justify-center gap-2 transition-opacity duration-500 ${
+          isOledDimmed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
+        aria-label="Swipe clock or tap to switch dial format"
+      >
+        {items.map((item) => {
+          const active = format === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                const curIdx = FORMAT_ORDER.indexOf(format);
+                const nextIdx = FORMAT_ORDER.indexOf(item.id);
+                setSwipeDir(nextIdx >= curIdx ? 1 : -1);
+                onChangeFormat(item.id);
+              }}
+              aria-label={`${item.label} clock view`}
+              title={`${item.label} view (or swipe clock)`}
+              className={`h-5 px-1.5 inline-flex items-center gap-1 rounded-full cursor-pointer transition-opacity ${
+                active ? 'opacity-100' : 'opacity-35 hover:opacity-75'
+              }`}
+            >
+              <span
+                className={`rounded-full bg-black dark:bg-white transition-all duration-200 ${
+                  active ? 'w-4 h-1.5' : 'w-1.5 h-1.5'
+                }`}
+              />
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Digital-Only Mode: unboxed minimalist typographic horology with rolling odometer digits & precision progress rail
   if (format === 'digital') {
     const activeRound = (completedRounds % longBreakInterval) + 1;
     const dotCount = Math.min(8, Math.max(2, longBreakInterval));
 
     return (
-      <motion.button
-        type="button"
-        onClick={onToggleRun}
-        whileHover={{ scale: 1.015 }}
-        whileTap={{ scale: 0.985 }}
-        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-        aria-label={isRunning ? 'Pause timer' : 'Start timer'}
-        className="group relative flex flex-col items-center justify-center select-none cursor-pointer px-4 py-4 sm:px-8 sm:py-6 text-black dark:text-white transition-colors duration-300 focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-black dark:focus-visible:outline-white"
+      <div
+        className="flex flex-col items-center justify-center select-none text-black dark:text-white touch-pan-y"
+        onPointerDown={handleClockPointerDown}
+        onPointerUp={handleClockPointerUp}
+        onPointerCancel={() => {
+          pointerStartRef.current = null;
+        }}
       >
-        {showDialCaption && (
-          <div className="mb-3 sm:mb-4 flex items-center gap-3 text-[11px] sm:text-xs font-bold tracking-[0.26em] uppercase text-black/80 dark:text-white/85">
-            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
-            {isRunning && (
-              <motion.span
-                aria-hidden="true"
-                animate={{ scale: [1, 1.45, 1], opacity: [0.95, 0.35, 0.95] }}
-                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-                className="w-1.5 h-1.5 rounded-full bg-black dark:bg-white shrink-0"
-              />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.button
+            key="dial-digital"
+            type="button"
+            onClick={handleClockClick}
+            initial={{ opacity: 0, x: swipeDir * 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -swipeDir * 24 }}
+            whileHover={{ scale: 1.015 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            aria-label={isRunning ? 'Pause timer' : 'Start timer'}
+            className="group relative flex flex-col items-center justify-center select-none cursor-pointer px-4 py-4 sm:px-8 sm:py-6 text-black dark:text-white transition-colors duration-300 focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-black dark:focus-visible:outline-white"
+          >
+            {showDialCaption && (
+              <div className="mb-3 sm:mb-4 flex items-center gap-3 text-[11px] sm:text-xs font-bold tracking-[0.26em] uppercase text-black/80 dark:text-white/85">
+                <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
+                {isRunning && (
+                  <motion.span
+                    aria-hidden="true"
+                    animate={{ scale: [1, 1.45, 1], opacity: [0.95, 0.35, 0.95] }}
+                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                    className="w-1.5 h-1.5 rounded-full bg-black dark:bg-white shrink-0"
+                  />
+                )}
+                <span>{phaseLabel}</span>
+                <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
+              </div>
             )}
-            <span>{phaseLabel}</span>
-            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
-          </div>
-        )}
 
-        <div
-          className={`font-mono-tabular font-bold tracking-[-0.02em] leading-[0.94] transition-transform duration-200 ${
-            isLongFormat
-              ? 'text-[4.5rem] sm:text-[7rem] md:text-[8.75rem]'
-              : 'text-[5.75rem] sm:text-[9.5rem] md:text-[11.5rem]'
-          }`}
-          aria-live="off"
-        >
-          {digits}
-        </div>
-
-        {/* Precision Horology Vernier Progress Rail */}
-        <div
-          aria-hidden="true"
-          className="relative mt-5 sm:mt-7 w-[min(300px,78vw)] sm:w-[400px] md:w-[460px] flex flex-col gap-1.5"
-        >
-          <div className="relative w-full flex items-center">
-            <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
-            <div className="relative flex-1 h-[2.5px] bg-black/15 dark:bg-white/20 rounded-full">
-              <div
-                className="absolute inset-y-0 left-0 bg-black dark:bg-white rounded-full transition-[width] duration-200 ease-out"
-                style={{ width: `${clampedProgress * 100}%` }}
-              />
-              <span
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-black dark:bg-white ring-2 ring-white dark:ring-black transition-[left] duration-200 ease-out"
-                style={{ left: `${clampedProgress * 100}%` }}
-              />
+            <div
+              className={`font-mono-tabular font-bold tracking-[-0.02em] leading-[0.94] ${
+                isLongFormat
+                  ? 'text-[4.25rem] sm:text-[6.75rem] md:text-[8.5rem]'
+                  : 'text-[5.5rem] sm:text-[9.25rem] md:text-[11.25rem]'
+              }`}
+              aria-live="off"
+            >
+              <RollingDigitText digits={digits} />
             </div>
-            <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
-          </div>
-          <div className="flex justify-between px-0.5 opacity-35">
-            {Array.from({ length: 11 }, (_, idx) => (
-              <span
-                key={idx}
-                className={`w-px ${idx % 5 === 0 ? 'h-1.5 bg-black dark:bg-white' : 'h-1 bg-black/70 dark:bg-white/70'}`}
-              />
-            ))}
-          </div>
-        </div>
 
-        {showDialCaption && (
-          <div className="mt-3.5 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/85 dark:text-white/90">
-            <span>{subCaption}</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono-tabular font-bold">{percentageText}</span>
-          </div>
-        )}
+            {/* Precision Horology Vernier Progress Rail */}
+            <div
+              aria-hidden="true"
+              className="relative mt-5 sm:mt-7 w-[min(300px,78vw)] sm:w-[400px] md:w-[460px] flex flex-col gap-1.5"
+            >
+              <div className="relative w-full flex items-center">
+                <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
+                <div className="relative flex-1 h-[2.5px] bg-black/15 dark:bg-white/20 rounded-full">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-black dark:bg-white rounded-full transition-[width] duration-200 ease-out"
+                    style={{ width: `${clampedProgress * 100}%` }}
+                  />
+                  <span
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-black dark:bg-white ring-2 ring-white dark:ring-black transition-[left] duration-200 ease-out"
+                    style={{ left: `${clampedProgress * 100}%` }}
+                  />
+                </div>
+                <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
+              </div>
+              <div className="flex justify-between px-0.5 opacity-35">
+                {Array.from({ length: 11 }, (_, idx) => (
+                  <span
+                    key={idx}
+                    className={`w-px ${idx % 5 === 0 ? 'h-1.5 bg-black dark:bg-white' : 'h-1 bg-black/70 dark:bg-white/70'}`}
+                  />
+                ))}
+              </div>
+            </div>
 
-        {/* Minimal Round Dots matching Analogue & Hybrid dials */}
-        <div aria-hidden="true" className="mt-3.5 flex items-center gap-2">
-          {Array.from({ length: dotCount }, (_, idx) => {
-            const filled = idx < activeRound;
-            return (
-              <span
-                key={idx}
-                className={`rounded-full border border-black dark:border-white transition-all ${
-                  filled
-                    ? 'w-2 h-2 bg-black dark:bg-white'
-                    : 'w-1.5 h-1.5 bg-transparent opacity-45'
-                }`}
-              />
-            );
-          })}
-        </div>
-      </motion.button>
+            {showDialCaption && (
+              <div className="mt-3.5 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/85 dark:text-white/90">
+                <span>{subCaption}</span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono-tabular font-bold">{percentageText}</span>
+              </div>
+            )}
+
+            {/* Minimal Round Dots matching Analogue & Hybrid dials */}
+            <div aria-hidden="true" className="mt-3.5 flex items-center gap-2">
+              {Array.from({ length: dotCount }, (_, idx) => {
+                const filled = idx < activeRound;
+                return (
+                  <span
+                    key={idx}
+                    className={`rounded-full border border-black dark:border-white transition-all ${
+                      filled
+                        ? 'w-2 h-2 bg-black dark:bg-white'
+                        : 'w-1.5 h-1.5 bg-transparent opacity-45'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          </motion.button>
+        </AnimatePresence>
+        {renderFormatSwitcherDots()}
+      </div>
     );
   }
 
@@ -833,15 +1023,25 @@ export function ClockDisplay({
   const activeSecondTick = Math.floor(((fractionalSeconds % 60) + 60) % 60);
 
   return (
-    <div className="flex flex-col items-center justify-center select-none text-black dark:text-white">
+    <div
+      className="flex flex-col items-center justify-center select-none text-black dark:text-white touch-pan-y"
+      onPointerDown={handleClockPointerDown}
+      onPointerUp={handleClockPointerUp}
+      onPointerCancel={() => {
+        pointerStartRef.current = null;
+      }}
+    >
       <motion.button
+        key={`dial-${format}`}
         type="button"
-        onClick={onToggleRun}
+        onClick={handleClockClick}
+        initial={{ opacity: 0.72, x: swipeDir * 16 }}
+        animate={{ opacity: 1, x: 0 }}
         whileHover={{ scale: 1.018 }}
         whileTap={{ scale: 0.982 }}
-        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         aria-label={isRunning ? 'Pause timer' : 'Start timer'}
-        className="relative w-[min(328px,54dvh)] h-[min(328px,54dvh)] sm:w-[min(440px,62dvh)] sm:h-[min(440px,62dvh)] md:w-[min(510px,66dvh)] md:h-[min(510px,66dvh)] flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black dark:focus-visible:outline-white"
+        className="relative w-[min(320px,51dvh)] h-[min(320px,51dvh)] sm:w-[min(430px,60dvh)] sm:h-[min(430px,60dvh)] md:w-[min(490px,64dvh)] md:h-[min(490px,64dvh)] flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black dark:focus-visible:outline-white"
       >
         {/* Dual Staggered Breathing Kinetic Pulse Rings While Active */}
         {(isRunning || presencePending) && (
@@ -1152,7 +1352,7 @@ export function ClockDisplay({
       </motion.button>
 
       {format === 'analogue' && showDialCaption && (
-        <div className="mt-2.5 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/85 dark:text-white/85">
+        <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/85 dark:text-white/85">
           <span className="uppercase tracking-[0.18em]">{phaseLabel}</span>
           <span aria-hidden="true">·</span>
           <span>{subCaption}</span>
@@ -1160,6 +1360,7 @@ export function ClockDisplay({
           <span className="font-mono-tabular font-bold">{percentageText}</span>
         </div>
       )}
+      {renderFormatSwitcherDots()}
     </div>
   );
 }

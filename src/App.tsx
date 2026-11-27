@@ -2,11 +2,13 @@ import {
   BarChart3,
   Check,
   Coffee,
+  Moon,
   Pencil,
   RotateCcw,
   Settings,
   ShieldCheck,
   Smartphone,
+  Sun,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +37,7 @@ import {
   XP_ZERO_URGE_BONUS,
   XpState,
 } from './types/pomodoro';
+import { triggerHaptic } from './utils/haptics';
 import {
   playCompletionChime,
   playMilestoneChime,
@@ -313,17 +316,19 @@ export default function App() {
 
   const triggerPresenceAlert = useCallback(
     (_checkpoint: number) => {
+      triggerHaptic('medium', settings.hapticsEnabled);
       if (settings.soundEnabled) {
         playPresencePromptChime(settings.soundVolume);
       }
     },
-    [settings.soundEnabled, settings.soundVolume],
+    [settings.hapticsEnabled, settings.soundEnabled, settings.soundVolume],
   );
 
   const handleToggleRun = useCallback(() => {
     if (pendingPresenceCheck?.pausedForAfk || pendingPresenceCheck?.deferredCompletion) {
       return;
     }
+    triggerHaptic('light', settings.hapticsEnabled);
     const nextRunning = !isRunning;
     if (nextRunning) {
       setGraceSecondsRemaining(null);
@@ -339,6 +344,7 @@ export default function App() {
     pendingPresenceCheck?.pausedForAfk,
     phase,
     settings.gracePauseEnabled,
+    settings.hapticsEnabled,
   ]);
 
   // Wake Lock API while timer is running
@@ -393,18 +399,23 @@ export default function App() {
     return () => stopAmbientNoise();
   }, []);
 
-  // Zen Auto-Fade Chrome while running
+  // Zen Auto-Fade & OLED Focus Curtain while running
   useEffect(() => {
-    if (view !== 'dashboard' || !isRunning || !settings.zenFadeEnabled) {
+    const shouldAutoDim =
+      view === 'dashboard' &&
+      isRunning &&
+      (settings.zenFadeEnabled || settings.oledFocusModeEnabled);
+    if (!shouldAutoDim) {
       setIsZenDimmed(false);
       return;
     }
 
-    let timerId = window.setTimeout(() => setIsZenDimmed(true), 4500);
+    const delayMs = settings.oledFocusModeEnabled ? 2800 : 4500;
+    let timerId = window.setTimeout(() => setIsZenDimmed(true), delayMs);
     const wakeChrome = () => {
       setIsZenDimmed(false);
       window.clearTimeout(timerId);
-      timerId = window.setTimeout(() => setIsZenDimmed(true), 4500);
+      timerId = window.setTimeout(() => setIsZenDimmed(true), delayMs);
     };
 
     window.addEventListener('pointermove', wakeChrome, { passive: true });
@@ -415,7 +426,7 @@ export default function App() {
       window.removeEventListener('pointermove', wakeChrome);
       window.removeEventListener('pointerdown', wakeChrome);
     };
-  }, [isRunning, settings.zenFadeEnabled, view]);
+  }, [isRunning, settings.oledFocusModeEnabled, settings.zenFadeEnabled, view]);
 
   const getPhaseTotalSeconds = useCallback(
     (targetPhase: PhaseType): number => {
@@ -534,6 +545,7 @@ export default function App() {
         pitchStep,
       );
     }
+    triggerHaptic('complete', settings.hapticsEnabled);
 
     const totalSec =
       getPhaseTotalSeconds(phase) + (phase === 'focus' ? ignitionBonusSecondsRef.current : 0);
@@ -612,6 +624,7 @@ export default function App() {
 
   const handleConfirmPresence = useCallback(() => {
     if (!pendingPresenceCheck) return;
+    triggerHaptic('confirm', settings.hapticsEnabled);
     presenceConfirmedRef.current += 1;
     setPresenceConfirmedCount(presenceConfirmedRef.current);
     const shouldComplete = pendingPresenceCheck.deferredCompletion;
@@ -629,6 +642,7 @@ export default function App() {
   }, [
     handleCountdownComplete,
     pendingPresenceCheck,
+    settings.hapticsEnabled,
     settings.soundEnabled,
     settings.soundVolume,
   ]);
@@ -887,6 +901,7 @@ export default function App() {
 
   const handleSwitchMode = (nextMode: TimerMode) => {
     if (nextMode === timerMode) return;
+    triggerHaptic('light', settings.hapticsEnabled);
     setIsRunning(false);
     setIsIgnition(false);
     setCustomBreakSeconds(null);
@@ -998,6 +1013,7 @@ export default function App() {
   const handleFinishCountUp = (startEarnedBreak: boolean) => {
     const totalSec = elapsedSeconds + ignitionBonusSecondsRef.current;
     if (totalSec >= 5) {
+      triggerHaptic('complete', settings.hapticsEnabled);
       evaluateCompletionXpBonuses(totalSec);
       appendSession('focus', 'countup', totalSec);
     }
@@ -1100,11 +1116,13 @@ export default function App() {
   }, []);
 
   const handleChangeTheme = (nextTheme: ThemeMode) => {
+    triggerHaptic('light', settings.hapticsEnabled);
     setTheme(nextTheme);
     saveTheme(nextTheme);
   };
 
   const handleChangeClockFormat = (fmt: ClockFormat) => {
+    triggerHaptic('light', settings.hapticsEnabled);
     setClockFormat(fmt);
     saveClockFormat(fmt);
   };
@@ -1153,7 +1171,17 @@ export default function App() {
     });
   }, []);
 
-  const chromeOpacityClass = isZenDimmed ? 'opacity-15 hover:opacity-100' : 'opacity-100';
+  const isOledCurtainActive =
+    settings.oledFocusModeEnabled && isRunning && isZenDimmed && !pendingPresenceCheck;
+  const chromeOpacityClass = isOledCurtainActive
+    ? 'opacity-0 pointer-events-none'
+    : isZenDimmed
+      ? 'opacity-15 hover:opacity-100'
+      : 'opacity-100';
+  const dailyGoalProgressPct = Math.min(
+    100,
+    Math.round((todayLiveMinutes / Math.max(1, settings.dailyGoalMinutes)) * 100),
+  );
   const xpProgressPct = Math.min(
     100,
     Math.round((xpState.carryFocusSeconds / XP_INTERVAL_SECONDS) * 100),
@@ -1266,11 +1294,13 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.99 }}
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="relative h-dvh w-full overflow-hidden bg-white dark:bg-black text-black dark:text-white transition-colors duration-200 atelier-grid-bg"
+            className={`relative h-dvh w-full overflow-hidden bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 ${
+              isOledCurtainActive ? '' : 'atelier-grid-bg'
+            }`}
           >
-            {/* Top-Left Corner: Extreme High-Contrast Settings & Analytics Icons */}
+            {/* Top-Left Corner: Settings, Analytics & Quick Polarity Switch */}
             <div
-              className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 sm:top-6 sm:left-6 z-30 flex items-center gap-2.5 transition-opacity duration-500 ${chromeOpacityClass}`}
+              className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 sm:top-6 sm:left-6 z-30 flex items-center gap-2 transition-opacity duration-500 ${chromeOpacityClass}`}
             >
               <motion.button
                 type="button"
@@ -1297,93 +1327,154 @@ export default function App() {
               >
                 <BarChart3 className="w-4 h-4" />
               </motion.button>
+
+              <motion.button
+                type="button"
+                whileHover={{ scale: 1.07 }}
+                whileTap={{ scale: 0.93 }}
+                transition={{ duration: 0.14 }}
+                onClick={() => handleChangeTheme(theme === 'light' ? 'dark' : 'light')}
+                aria-label={theme === 'light' ? 'Switch to black theme' : 'Switch to light theme'}
+                title={theme === 'light' ? 'Black Theme' : 'Light Theme'}
+                className="w-10 h-10 inline-flex items-center justify-center rounded-xl border-2 border-black dark:border-white bg-white text-black dark:bg-black dark:text-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors cursor-pointer shadow-[0_6px_18px_rgba(0,0,0,0.12)] dark:shadow-[0_6px_18px_rgba(255,255,255,0.08)]"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </motion.button>
             </div>
 
-            {/* Top-Right: Fresh Daily Studied Readout + Quiet XP & Rank */}
+            {/* Top-Right: Daily Goal Arc + Fresh Daily Studied Readout + XP */}
             <div
-              className={`fixed top-[max(1.1rem,calc(env(safe-area-inset-top)+0.15rem))] right-4 sm:top-6 sm:right-6 z-30 text-right transition-opacity duration-500 ${chromeOpacityClass}`}
-              title={`Today's measured time (${currentDayKey}) · ${Math.floor(xpState.carryFocusSeconds / 60)}/30m toward next +5 XP`}
+              className={`fixed top-[max(1rem,env(safe-area-inset-top))] right-4 sm:top-6 sm:right-6 z-30 flex items-center gap-2.5 text-right transition-opacity duration-500 ${chromeOpacityClass}`}
+              title={`Today's measured time (${currentDayKey}) · ${dailyGoalProgressPct}% of ${formatHoursMinutes(settings.dailyGoalMinutes)} daily goal · ${Math.floor(xpState.carryFocusSeconds / 60)}/30m toward next +5 XP`}
             >
-              <div className="text-xs sm:text-sm font-bold font-mono-tabular tracking-tight text-black dark:text-white">
-                Today · {formatHoursMinutes(todayLiveMinutes)}
+              <div>
+                <div className="text-xs sm:text-sm font-bold font-mono-tabular tracking-tight text-black dark:text-white">
+                  Today · {formatHoursMinutes(todayLiveMinutes)}
+                </div>
+                <div className="text-[11px] font-bold font-mono-tabular text-black/75 dark:text-white/80">
+                  {dailyGoalProgressPct}% of {formatHoursMinutes(settings.dailyGoalMinutes)} · {xpState.totalXp} XP
+                </div>
+                <div className="mt-1 w-24 h-[2.5px] bg-black/15 dark:bg-white/25 ml-auto overflow-hidden rounded-full">
+                  <motion.div
+                    className="h-full bg-black dark:bg-white"
+                    initial={false}
+                    animate={{ width: `${xpProgressPct}%` }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  />
+                </div>
               </div>
-              <div className="text-[11px] font-bold font-mono-tabular text-black/75 dark:text-white/80">
-                {xpState.totalXp} XP · {monolithRank.name}
-              </div>
-              <div className="mt-1 w-20 h-[3px] bg-black/15 dark:bg-white/25 ml-auto overflow-hidden rounded-full">
-                <motion.div
-                  className="h-full bg-black dark:bg-white"
-                  initial={false}
-                  animate={{ width: `${xpProgressPct}%` }}
-                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 36 36"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeOpacity="0.18"
+                  strokeWidth="3"
                 />
-              </div>
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 14}
+                  strokeDashoffset={2 * Math.PI * 14 * (1 - dailyGoalProgressPct / 100)}
+                  transform="rotate(-90 18 18)"
+                  style={{ transition: 'stroke-dashoffset 450ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+                />
+                <text
+                  x="18"
+                  y="18.5"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill="currentColor"
+                  fontSize="8.5"
+                  fontWeight="800"
+                  fontFamily="var(--font-mono)"
+                >
+                  {dailyGoalProgressPct}
+                </text>
+              </svg>
             </div>
 
             {/* Zero-scroll Centered Dashboard Viewport */}
-            <main className="relative z-10 h-full w-full flex flex-col items-center justify-between px-4 sm:px-6 pt-[max(4rem,calc(env(safe-area-inset-top)+3.25rem))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-7 sm:pb-7">
-              {/* Top Mode Control + Single Edit Button */}
+            <main className="relative z-10 h-full w-full flex flex-col items-center justify-between px-4 sm:px-6 pt-[max(4rem,calc(env(safe-area-inset-top)+3.25rem))] pb-[max(1.1rem,env(safe-area-inset-bottom))] sm:pt-7 sm:pb-6">
+              {/* Top Mode Control + Edit + Subject Tag Selector */}
               <div
-                className={`flex flex-wrap items-center justify-center gap-2.5 shrink-0 transition-opacity duration-500 ${chromeOpacityClass}`}
+                className={`flex flex-col items-center gap-2 shrink-0 transition-opacity duration-500 ${chromeOpacityClass}`}
               >
-                <div
-                  className="inline-flex p-1 rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_24px_rgba(255,255,255,0.06)]"
-                  role="group"
-                  aria-label="Timer counting mode"
-                >
-                  {(
-                    [
-                      { id: 'countdown' as TimerMode, label: 'Countdown' },
-                      { id: 'countup' as TimerMode, label: 'Count Up' },
-                    ] as const
-                  ).map((opt) => {
-                    const active = timerMode === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => handleSwitchMode(opt.id)}
-                        className={`relative px-4 py-1.5 text-xs font-bold tracking-wide rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                          active
-                            ? 'text-white dark:text-black'
-                            : 'text-black dark:text-white hover:opacity-70'
-                        }`}
-                      >
-                        {active && (
-                          <motion.span
-                            layoutId="timer-mode-pill"
-                            transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                            className="absolute inset-0 rounded-lg bg-black dark:bg-white"
-                          />
-                        )}
-                        <span className="relative z-10">{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <div
+                    className="inline-flex p-1 rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_24px_rgba(255,255,255,0.06)]"
+                    role="group"
+                    aria-label="Timer counting mode"
+                  >
+                    {(
+                      [
+                        { id: 'countdown' as TimerMode, label: 'Countdown' },
+                        { id: 'countup' as TimerMode, label: 'Count Up' },
+                      ] as const
+                    ).map((opt) => {
+                      const active = timerMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => handleSwitchMode(opt.id)}
+                          className={`relative px-4 py-1.5 text-xs font-bold tracking-wide rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                            active
+                              ? 'text-white dark:text-black'
+                              : 'text-black dark:text-white hover:opacity-70'
+                          }`}
+                        >
+                          {active && (
+                            <motion.span
+                              layoutId="timer-mode-pill"
+                              transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                              className="absolute inset-0 rounded-lg bg-black dark:bg-white"
+                            />
+                          )}
+                          <span className="relative z-10">{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.94 }}
-                  transition={{ duration: 0.14 }}
-                  onClick={() => setView('edit')}
-                  aria-label={
-                    timerMode === 'countdown'
-                      ? 'Edit countdown session times'
-                      : 'Set count up goal'
-                  }
-                  className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white text-xs font-bold tracking-wide transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_24px_rgba(255,255,255,0.06)]"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </motion.button>
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.94 }}
+                    transition={{ duration: 0.14 }}
+                    onClick={() => setView('edit')}
+                    aria-label={
+                      timerMode === 'countdown'
+                        ? 'Edit countdown session times'
+                        : 'Set count up goal'
+                    }
+                    className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white text-xs font-bold tracking-wide transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_24px_rgba(255,255,255,0.06)]"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </motion.button>
+                </div>
               </div>
 
-              {/* Center Clock Stage (Bigger, Minimal, Rotating) */}
+              {/* Center Clock Stage (Bigger, Minimal, Rotating, Swipeable) */}
               <div className="flex items-center justify-center min-h-0 py-1">
                 <ClockDisplay
                   format={clockFormat}
+                  onChangeFormat={handleChangeClockFormat}
                   mode={timerMode}
                   phase={phase}
                   theme={theme}
@@ -1415,6 +1506,7 @@ export default function App() {
                   milestoneRipplesEnabled={settings.milestoneRipplesEnabled}
                   presencePending={Boolean(pendingPresenceCheck)}
                   presenceConfirmedCount={presenceConfirmedCount}
+                  isOledDimmed={isOledCurtainActive}
                   onMilestoneQuarter={handleMilestoneQuarter}
                 />
               </div>

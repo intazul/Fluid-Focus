@@ -184,7 +184,12 @@ export function loadSettings(): PomodoroSettings {
         Array.isArray(parsed.customPresets) && parsed.customPresets.length > 0
           ? parsed.customPresets
           : DEFAULT_CUSTOM_PRESETS;
-      const merged = { ...DEFAULT_SETTINGS, ...parsed, sweepMode: migratedSweep, customPresets };
+      const merged = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        sweepMode: migratedSweep,
+        customPresets,
+      };
       return {
         ...merged,
         presenceIntervalMinutes: clampPresenceMinutes(merged.presenceIntervalMinutes),

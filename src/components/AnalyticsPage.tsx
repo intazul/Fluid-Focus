@@ -8,8 +8,10 @@ import {
   Minus,
   Plus,
   Printer,
+  Share2,
   Shield,
   Trash2,
+  X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -127,6 +129,7 @@ export function AnalyticsPage({
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('all');
   const [showAllLedger, setShowAllLedger] = useState(false);
   const [debriefCopied, setDebriefCopied] = useState(false);
+  const [cardShareStatus, setCardShareStatus] = useState<string | null>(null);
 
   const [showAddStudied, setShowAddStudied] = useState(false);
   const [studiedMinutes, setStudiedMinutes] = useState(45);
@@ -396,7 +399,7 @@ export function AnalyticsPage({
       prevPeriodFocusMinutes: prevFocusMin,
       prevLeadingFocusMinutes: prevLeadingMin,
     };
-  }, [currentDayKey, range, offset, sessions]);
+  }, [currentDayKey, offset, range, sessions]);
 
   const deepMetrics = useMemo(() => {
     const focusList = periodSessions.filter((s) => s.type === 'focus');
@@ -704,6 +707,163 @@ export function AnalyticsPage({
     }
   };
 
+  const handleExportShareCard = async () => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1080;
+      canvas.height = 1350;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const dark = theme === 'dark';
+      const bg = dark ? '#000000' : '#ffffff';
+      const fg = dark ? '#ffffff' : '#000000';
+      const muted = dark ? 'rgba(255,255,255,0.68)' : 'rgba(0,0,0,0.68)';
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Precision outer frame
+      ctx.strokeStyle = fg;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(48, 48, 1080 - 96, 1350 - 96);
+
+      // Header
+      ctx.fillStyle = fg;
+      ctx.font = '700 32px Carlito, "Source Sans 3", sans-serif';
+      ctx.fillText('MONOLITH POMODORO', 96, 128);
+
+      ctx.fillStyle = muted;
+      ctx.font = '600 28px Carlito, "Source Sans 3", sans-serif';
+      ctx.fillText(
+        new Date().toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+        96,
+        174,
+      );
+
+      // Rank top right
+      ctx.textAlign = 'right';
+      ctx.fillStyle = fg;
+      ctx.font = '700 30px "Source Sans 3", Carlito, sans-serif';
+      ctx.fillText(`${monolithRank.name.toUpperCase()} · ${xpState.totalXp} XP`, 1080 - 96, 128);
+      ctx.textAlign = 'left';
+
+      // Horizontal hairline
+      ctx.beginPath();
+      ctx.moveTo(96, 212);
+      ctx.lineTo(1080 - 96, 212);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = fg;
+      ctx.stroke();
+
+      // Hero Today Studied
+      ctx.fillStyle = muted;
+      ctx.font = '700 26px Carlito, "Source Sans 3", sans-serif';
+      ctx.fillText("TODAY'S STUDIED TIME", 96, 290);
+
+      ctx.fillStyle = fg;
+      ctx.font = '700 176px "Source Sans 3", Carlito, sans-serif';
+      ctx.fillText(formatDurationMinutes(deepMetrics.todayFocusMinutes), 92, 466);
+
+      // Daily Goal Bar
+      ctx.fillStyle = muted;
+      ctx.font = '700 28px "Source Sans 3", Carlito, sans-serif';
+      ctx.fillText(
+        `${deepMetrics.goalProgressPct}% OF ${formatDurationMinutes(settings.dailyGoalMinutes)} DAILY GOAL`,
+        96,
+        536,
+      );
+
+      ctx.strokeStyle = fg;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(96, 566, 1080 - 192, 34);
+      const fillW = Math.max(0, Math.round(((1080 - 204) * deepMetrics.goalProgressPct) / 100));
+      if (fillW > 0) {
+        ctx.fillStyle = fg;
+        ctx.fillRect(102, 572, fillW, 22);
+      }
+
+      // 3-Column Metrics
+      const stats = [
+        { label: 'STREAK', val: `${deepMetrics.currentStreak}d` },
+        {
+          label: 'PEAK HOUR',
+          val: globalPeakHour !== null ? `${String(globalPeakHour).padStart(2, '0')}:00` : '--:--',
+        },
+        { label: 'ZERO-URGE', val: `${todayDebrief.purityPct}%` },
+      ];
+      stats.forEach((st, i) => {
+        const bx = 96 + i * 304;
+        ctx.strokeStyle = fg;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(bx, 650, 280, 150);
+        ctx.fillStyle = muted;
+        ctx.font = '700 22px Carlito, "Source Sans 3", sans-serif';
+        ctx.fillText(st.label, bx + 24, 700);
+        ctx.fillStyle = fg;
+        ctx.font = '700 44px "Source Sans 3", Carlito, sans-serif';
+        ctx.fillText(st.val.slice(0, 11), bx + 24, 764);
+      });
+
+      // 7-Day Silhouette Bar Chart
+      ctx.fillStyle = muted;
+      ctx.font = '700 24px Carlito, "Source Sans 3", sans-serif';
+      ctx.fillText('LAST 7 DAYS', 96, 874);
+
+      const last7 = deepMetrics.heatmapDays.slice(-7);
+      const max7 = Math.max(30, ...last7.map((d) => d.minutes));
+      const base7Y = 1170;
+      const maxBarH = 230;
+      last7.forEach((d, idx) => {
+        const x = 96 + idx * 128;
+        const h = d.minutes > 0 ? Math.max(18, Math.round((d.minutes / max7) * maxBarH)) : 8;
+        ctx.fillStyle = d.minutes > 0 ? fg : muted;
+        ctx.fillRect(x, base7Y - h, 88, h);
+        ctx.fillStyle = muted;
+        ctx.font = '700 22px "Source Sans 3", Carlito, sans-serif';
+        ctx.fillText(d.label.split(' ')[1] || d.label, x + 28, base7Y + 34);
+      });
+
+      ctx.fillStyle = muted;
+      ctx.font = '600 24px Carlito, "Source Sans 3", sans-serif';
+      ctx.fillText('Pure Contrast Focus Horology', 96, 1264);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/png'),
+      );
+      if (!blob) return;
+
+      const filename = `monolith-study-card-${toDayKey(new Date())}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+      const navWithShare = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+      };
+      if (navWithShare.share && navWithShare.canShare?.({ files: [file] })) {
+        await navWithShare.share({
+          title: 'Monolith Pomodoro Study Card',
+          files: [file],
+        });
+        setCardShareStatus('Shared');
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        setCardShareStatus('Card Saved');
+      }
+      window.setTimeout(() => setCardShareStatus(null), 2400);
+    } catch {
+      // ignore user-cancelled share
+    }
+  };
+
   const handleSubmitStudiedTime = () => {
     if (!onAddStudiedSession) return;
     const cleanMin = Math.max(1, Math.min(720, Math.round(studiedMinutes) || 1));
@@ -713,7 +873,7 @@ export function AnalyticsPage({
     const iso = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
     onAddStudiedSession(cleanMin, iso);
     setShowAddStudied(false);
-    setStudiedFeedback(`Added ${formatDurationMinutes(cleanMin)} studied time`);
+    setStudiedFeedback(`Added ${formatDurationMinutes(cleanMin)}`);
     window.setTimeout(() => setStudiedFeedback(null), 2600);
   };
 
@@ -1646,39 +1806,52 @@ export function AnalyticsPage({
               </div>
             )}
 
-            <div
-              className={`mt-2 min-h-[42px] flex flex-wrap items-center justify-between gap-2 px-4 py-2 rounded-xl border-2 border-black dark:border-white text-xs transition-colors ${
-                hoveredIndex !== null && buckets[hoveredIndex]
-                  ? 'bg-black text-white dark:bg-white dark:text-black'
-                  : 'bg-white text-black dark:bg-black dark:text-white'
-              }`}
-            >
+            <AnimatePresence mode="wait">
               {hoveredIndex !== null && buckets[hoveredIndex] ? (
-                <>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="font-bold">
-                      {buckets[hoveredIndex].label || buckets[hoveredIndex].subLabel}
-                      {buckets[hoveredIndex].label && buckets[hoveredIndex].subLabel
-                        ? ` · ${buckets[hoveredIndex].subLabel}`
-                        : ''}
-                    </span>
-                    {bucketDeltas[hoveredIndex] !== null && (
-                      <span className="font-mono-tabular font-extrabold px-2 py-0.5 rounded border border-current">
-                        {bucketDeltas[hoveredIndex]! > 0
-                          ? `▲ +${bucketDeltas[hoveredIndex]}%`
-                          : bucketDeltas[hoveredIndex]! < 0
-                            ? `▼ ${bucketDeltas[hoveredIndex]}%`
-                            : '0%'}
+                <motion.div
+                  key={`inspect-${buckets[hoveredIndex].key}`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="mt-2 rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black px-4 py-3 text-xs space-y-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="font-extrabold text-sm">
+                        {buckets[hoveredIndex].label || buckets[hoveredIndex].subLabel}
+                        {buckets[hoveredIndex].label && buckets[hoveredIndex].subLabel
+                          ? ` · ${buckets[hoveredIndex].subLabel}`
+                          : ''}
                       </span>
-                    )}
+                      {bucketDeltas[hoveredIndex] !== null && (
+                        <span className="font-mono-tabular font-extrabold px-2 py-0.5 rounded border border-current">
+                          {bucketDeltas[hoveredIndex]! > 0
+                            ? `▲ +${bucketDeltas[hoveredIndex]}%`
+                            : bucketDeltas[hoveredIndex]! < 0
+                              ? `▼ ${bucketDeltas[hoveredIndex]}%`
+                              : '0%'}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHoveredIndex(null)}
+                      aria-label="Clear bar inspection"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-current/60 hover:opacity-75 cursor-pointer font-semibold"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Close</span>
+                    </button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 font-mono-tabular">
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 font-mono-tabular">
                     <span>
-                      Studied:{' '}
+                      Total Studied:{' '}
                       <strong>{formatDurationMinutes(buckets[hoveredIndex].focusMinutes)}</strong>
                       {buckets[hoveredIndex].manualMinutes > 0
                         ? ` (${formatDurationMinutes(buckets[hoveredIndex].measuredMinutes)} measured + ${formatDurationMinutes(buckets[hoveredIndex].manualMinutes)} added)`
-                        : ` (${buckets[hoveredIndex].focusCount})`}
+                        : ` (${buckets[hoveredIndex].focusCount} sessions)`}
                     </span>
                     <span>
                       Breaks:{' '}
@@ -1686,13 +1859,15 @@ export function AnalyticsPage({
                       {buckets[hoveredIndex].breakCount})
                     </span>
                   </div>
-                </>
+                </motion.div>
               ) : (
-                <span className="font-medium text-black/75 dark:text-white/80">
-                  Tap or hover any bar to inspect measured + added studied time and % change.
-                </span>
+                <div className="mt-2 min-h-[42px] flex items-center justify-between gap-2 px-4 py-2 rounded-xl border-2 border-black dark:border-white bg-white text-black dark:bg-black dark:text-white text-xs">
+                  <span className="font-medium text-black/75 dark:text-white/80">
+                    Tap or hover any bar to lock &amp; inspect measured, added time, and % change.
+                  </span>
+                </div>
               )}
-            </div>
+            </AnimatePresence>
           </div>
         </motion.section>
 
@@ -2061,6 +2236,15 @@ export function AnalyticsPage({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => void handleExportShareCard()}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg ${bwSolidBtn}`}
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>{cardShareStatus ?? 'Share Card'}</span>
+                </motion.button>
                 <button
                   type="button"
                   onClick={() => void handleCopyDebrief()}
@@ -2524,8 +2708,8 @@ export function AnalyticsPage({
                                 : 'Count Up'}
                           </span>
                           {isManual && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded border border-black dark:border-white">
-                              Added
+                            <span className="text-[10px] font-bold uppercase opacity-70">
+                              (Added)
                             </span>
                           )}
                         </span>
@@ -2610,10 +2794,10 @@ export function AnalyticsPage({
                                     : 'border-2 border-black dark:border-white'
                                 }`}
                               />
-                              {s.type === 'focus' ? 'Focus' : 'Break'}
+                              <span>{s.type === 'focus' ? 'Focus' : 'Break'}</span>
                               {isManual && (
-                                <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded border border-black dark:border-white">
-                                  Added
+                                <span className="text-[10px] font-bold uppercase opacity-70">
+                                  (Added)
                                 </span>
                               )}
                             </span>

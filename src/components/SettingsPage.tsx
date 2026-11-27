@@ -426,6 +426,14 @@ export function SettingsPage({
                   onToggle={() => updateField('zenFadeEnabled', !settings.zenFadeEnabled)}
                 />
                 <ToggleRow
+                  title="OLED Focus Curtain"
+                  desc="Fade all dashboard edges to pure stillness when the timer runs"
+                  checked={settings.oledFocusModeEnabled}
+                  onToggle={() =>
+                    updateField('oledFocusModeEnabled', !settings.oledFocusModeEnabled)
+                  }
+                />
+                <ToggleRow
                   title="Dial Caption & Percentage"
                   desc="Show phase label, round count, and completion % inside the dial"
                   checked={settings.showDialCaption}
@@ -853,6 +861,12 @@ export function SettingsPage({
                   desc="Play a crisp watchmaker tick on each elapsed second"
                   checked={settings.tickSoundEnabled}
                   onToggle={() => updateField('tickSoundEnabled', !settings.tickSoundEnabled)}
+                />
+                <ToggleRow
+                  title="Tactile Haptic Feedback"
+                  desc="Subtle Android vibration on clock taps, mode switches, and check-ins"
+                  checked={settings.hapticsEnabled}
+                  onToggle={() => updateField('hapticsEnabled', !settings.hapticsEnabled)}
                 />
               </div>
 
