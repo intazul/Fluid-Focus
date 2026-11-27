@@ -62,6 +62,14 @@ function formatDigits(totalSeconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function formatClockMinutes(totalMinutes: number): string {
+  const rounded = Math.max(0, Math.round(totalMinutes));
+  if (rounded < 60) return `${rounded}m`;
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 function getPhaseLabel(
   mode: TimerMode,
   phase: PhaseType,
@@ -201,17 +209,26 @@ function ClockFaceLayer({
           </g>
         </g>
 
-        {/* Minimal counter-rotating inner horizon ring */}
+        {/* Minimal counter-rotating inner horizon rings */}
         <g transform={`rotate(${-dialRotationAngle * 0.5} ${CX} ${CY})`}>
           <circle
             cx={CX}
             cy={CY}
-            r="116"
+            r="118"
             fill="none"
             stroke={ink}
-            strokeOpacity="0.18"
+            strokeOpacity="0.22"
             strokeWidth="1"
             strokeDasharray="2 10"
+          />
+          <circle
+            cx={CX}
+            cy={CY}
+            r="84"
+            fill="none"
+            stroke={ink}
+            strokeOpacity="0.1"
+            strokeWidth="0.9"
           />
         </g>
 
@@ -227,7 +244,7 @@ function ClockFaceLayer({
                 key={idx}
                 cx={cx}
                 cy={CY + 72}
-                r={filled ? 3.2 : 2.3}
+                r={filled ? 3.4 : 2.3}
                 fill={filled ? ink : 'none'}
                 stroke={ink}
                 strokeWidth="1.4"
@@ -237,31 +254,49 @@ function ClockFaceLayer({
           })}
         </g>
 
-        {/* Tapered Minute Hand */}
+        {/* Sculpted Dauphine Minute Hand */}
         <g transform={`rotate(${minuteAngle} ${CX} ${CY})`}>
           <polygon
-            points={`${CX},${CY - 114} ${CX + 5},${CY - 12} ${CX},${CY + 22} ${CX - 5},${CY - 12}`}
+            points={`${CX},${CY - 120} ${CX + 6.5},${CY - 14} ${CX},${CY + 22} ${CX - 6.5},${CY - 14}`}
             fill={ink}
+          />
+          <line
+            x1={CX}
+            y1={CY - 106}
+            x2={CX}
+            y2={CY - 14}
+            stroke={invertedInk}
+            strokeOpacity="0.45"
+            strokeWidth="1.1"
+            strokeLinecap="round"
           />
         </g>
 
-        {/* Minimal Second Hand */}
+        {/* Precision Sweep Second Hand with Counterweight Eye */}
         <g transform={`rotate(${secondAngle} ${CX} ${CY})`}>
           <line
             x1={CX}
-            y1={CY + 34}
+            y1={CY + 32}
             x2={CX}
-            y2={CY - 142}
+            y2={CY - 144}
             stroke={ink}
-            strokeWidth="2.2"
+            strokeWidth="2.1"
             strokeLinecap="round"
           />
-          <circle cx={CX} cy={CY - 142} r="4" fill={ink} />
+          <circle
+            cx={CX}
+            cy={CY + 24}
+            r="4.2"
+            fill={invertedInk}
+            stroke={ink}
+            strokeWidth="1.8"
+          />
+          <circle cx={CX} cy={CY - 144} r="4.2" fill={ink} />
         </g>
 
         {/* Center Pivot */}
-        <circle cx={CX} cy={CY} r="7.5" fill={ink} />
-        <circle cx={CX} cy={CY} r="2.6" fill={invertedInk} />
+        <circle cx={CX} cy={CY} r="8" fill={ink} />
+        <circle cx={CX} cy={CY} r="2.8" fill={invertedInk} />
       </g>
     );
   }
@@ -453,8 +488,8 @@ export function ClockDisplay({
                   isPeakWindow ? ' · Peak' : ''
                 }${presenceSuffix}`
               : earnedBreakMinutes > 0
-                ? `Earned Break ${earnedBreakMinutes}m${presenceSuffix}`
-                : `Goal ${countUpTargetMinutes}m${isPeakWindow ? ' · Peak' : ''}${presenceSuffix}`;
+                ? `Earned Break ${formatClockMinutes(earnedBreakMinutes)}${presenceSuffix}`
+                : `Goal ${formatClockMinutes(countUpTargetMinutes)}${isPeakWindow ? ' · Peak' : ''}${presenceSuffix}`;
 
   const [radialPulseScale, setRadialPulseScale] = useState(1);
   const [rippleKey, setRippleKey] = useState(0);
@@ -656,10 +691,18 @@ export function ClockDisplay({
         className="group relative flex flex-col items-center justify-center select-none cursor-pointer px-4 py-4 sm:px-8 sm:py-6 text-black dark:text-white transition-colors duration-300 focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-black dark:focus-visible:outline-white"
       >
         {showDialCaption && (
-          <div className="mb-3 sm:mb-4 flex items-center gap-3 text-[11px] sm:text-xs font-bold tracking-[0.28em] uppercase text-black/75 dark:text-white/80">
-            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-30" />
+          <div className="mb-3 sm:mb-4 flex items-center gap-3 text-[11px] sm:text-xs font-bold tracking-[0.26em] uppercase text-black/80 dark:text-white/85">
+            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
+            {isRunning && (
+              <motion.span
+                aria-hidden="true"
+                animate={{ scale: [1, 1.45, 1], opacity: [0.95, 0.35, 0.95] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-1.5 h-1.5 rounded-full bg-black dark:bg-white shrink-0"
+              />
+            )}
             <span>{phaseLabel}</span>
-            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-30" />
+            <span aria-hidden="true" className="h-px w-6 sm:w-8 bg-current opacity-35" />
           </div>
         )}
 
@@ -674,27 +717,37 @@ export function ClockDisplay({
           {digits}
         </div>
 
-        {/* Minimal Precision Progress Rail */}
+        {/* Precision Horology Vernier Progress Rail */}
         <div
           aria-hidden="true"
-          className="relative mt-5 sm:mt-7 w-[min(290px,76vw)] sm:w-[390px] md:w-[450px] flex items-center"
+          className="relative mt-5 sm:mt-7 w-[min(300px,78vw)] sm:w-[400px] md:w-[460px] flex flex-col gap-1.5"
         >
-          <span className="h-2 w-px bg-black/35 dark:bg-white/40 shrink-0" />
-          <div className="relative flex-1 h-[2px] bg-black/15 dark:bg-white/20">
-            <div
-              className="absolute inset-y-0 left-0 bg-black dark:bg-white transition-[width] duration-200 ease-out"
-              style={{ width: `${clampedProgress * 100}%` }}
-            />
-            <span
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-black dark:bg-white transition-[left] duration-200 ease-out"
-              style={{ left: `${clampedProgress * 100}%` }}
-            />
+          <div className="relative w-full flex items-center">
+            <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
+            <div className="relative flex-1 h-[2.5px] bg-black/15 dark:bg-white/20 rounded-full">
+              <div
+                className="absolute inset-y-0 left-0 bg-black dark:bg-white rounded-full transition-[width] duration-200 ease-out"
+                style={{ width: `${clampedProgress * 100}%` }}
+              />
+              <span
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-black dark:bg-white ring-2 ring-white dark:ring-black transition-[left] duration-200 ease-out"
+                style={{ left: `${clampedProgress * 100}%` }}
+              />
+            </div>
+            <span className="h-2.5 w-[1.5px] bg-black/45 dark:bg-white/50 shrink-0" />
           </div>
-          <span className="h-2 w-px bg-black/35 dark:bg-white/40 shrink-0" />
+          <div className="flex justify-between px-0.5 opacity-35">
+            {Array.from({ length: 11 }, (_, idx) => (
+              <span
+                key={idx}
+                className={`w-px ${idx % 5 === 0 ? 'h-1.5 bg-black dark:bg-white' : 'h-1 bg-black/70 dark:bg-white/70'}`}
+              />
+            ))}
+          </div>
         </div>
 
         {showDialCaption && (
-          <div className="mt-4 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/80 dark:text-white/85">
+          <div className="mt-3.5 flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wide text-black/85 dark:text-white/90">
             <span>{subCaption}</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono-tabular font-bold">{percentageText}</span>
@@ -777,35 +830,50 @@ export function ClockDisplay({
   });
 
   const urgeNotchCount = Math.min(12, Math.max(0, distractions));
+  const activeSecondTick = Math.floor(((fractionalSeconds % 60) + 60) % 60);
 
   return (
     <div className="flex flex-col items-center justify-center select-none text-black dark:text-white">
       <motion.button
         type="button"
         onClick={onToggleRun}
-        whileHover={{ scale: 1.015 }}
-        whileTap={{ scale: 0.985 }}
-        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+        whileHover={{ scale: 1.018 }}
+        whileTap={{ scale: 0.982 }}
+        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
         aria-label={isRunning ? 'Pause timer' : 'Start timer'}
-        className="relative w-[min(325px,54dvh)] h-[min(325px,54dvh)] sm:w-[min(436px,62dvh)] sm:h-[min(436px,62dvh)] md:w-[min(504px,66dvh)] md:h-[min(504px,66dvh)] flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black dark:focus-visible:outline-white"
+        className="relative w-[min(328px,54dvh)] h-[min(328px,54dvh)] sm:w-[min(440px,62dvh)] sm:h-[min(440px,62dvh)] md:w-[min(510px,66dvh)] md:h-[min(510px,66dvh)] flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black dark:focus-visible:outline-white"
       >
-        {/* Subtle breathing kinetic pulse ring while active */}
+        {/* Dual Staggered Breathing Kinetic Pulse Rings While Active */}
         {(isRunning || presencePending) && (
-          <motion.span
-            aria-hidden="true"
-            initial={{ scale: 0.96, opacity: presencePending ? 0.85 : 0.4 }}
-            animate={{ scale: 1.05, opacity: 0 }}
-            transition={{
-              duration: presencePending ? 1.35 : 2.6,
-              repeat: Infinity,
-              ease: 'easeOut',
-            }}
-            className={`absolute inset-0 rounded-full pointer-events-none ${
-              presencePending
-                ? 'border-2 border-black dark:border-white'
-                : 'border border-black/40 dark:border-white/45'
-            }`}
-          />
+          <>
+            <motion.span
+              aria-hidden="true"
+              initial={{ scale: 0.96, opacity: presencePending ? 0.85 : 0.42 }}
+              animate={{ scale: 1.06, opacity: 0 }}
+              transition={{
+                duration: presencePending ? 1.35 : 2.6,
+                repeat: Infinity,
+                ease: 'easeOut',
+              }}
+              className={`absolute inset-0 rounded-full pointer-events-none ${
+                presencePending
+                  ? 'border-2 border-black dark:border-white'
+                  : 'border border-black/45 dark:border-white/50'
+              }`}
+            />
+            <motion.span
+              aria-hidden="true"
+              initial={{ scale: 0.95, opacity: 0.28 }}
+              animate={{ scale: 1.09, opacity: 0 }}
+              transition={{
+                duration: presencePending ? 1.35 : 2.6,
+                delay: presencePending ? 0.65 : 1.3,
+                repeat: Infinity,
+                ease: 'easeOut',
+              }}
+              className="absolute inset-0 rounded-full border border-black/25 dark:border-white/30 pointer-events-none"
+            />
+          </>
         )}
 
         {/* Session Milestone Shockwave Ripple (25% / 50% / 75%) */}
@@ -815,7 +883,7 @@ export function ClockDisplay({
               key={rippleKey}
               aria-hidden="true"
               initial={{ scale: 0.74, opacity: 0.85 }}
-              animate={{ scale: 1.1, opacity: 0 }}
+              animate={{ scale: 1.12, opacity: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.95, ease: [0.16, 1, 0.3, 1] }}
               className="absolute inset-0 rounded-full border-2 border-black dark:border-white pointer-events-none"
@@ -841,21 +909,24 @@ export function ClockDisplay({
             </clipPath>
           </defs>
 
-          {/* 0. Precision 60-Tick Outer Swiss Vernier Perimeter */}
+          {/* 0. Precision 60-Tick Outer Swiss Vernier Perimeter with Live Second Sweep Accent */}
           <g>
-            {vernierTicks.map((t) => (
-              <line
-                key={t.i}
-                x1={t.x1}
-                y1={t.y1}
-                x2={t.x2}
-                y2={t.y2}
-                stroke={outerRingInk}
-                strokeWidth={t.isFive ? 1.5 : 0.85}
-                strokeOpacity={t.isFive ? 0.36 : 0.16}
-                strokeLinecap="round"
-              />
-            ))}
+            {vernierTicks.map((t) => {
+              const isCurrentSec = isRunning && t.i === activeSecondTick;
+              return (
+                <line
+                  key={t.i}
+                  x1={t.x1}
+                  y1={t.y1}
+                  x2={t.x2}
+                  y2={t.y2}
+                  stroke={outerRingInk}
+                  strokeWidth={isCurrentSec ? 2.6 : t.isFive ? 1.5 : 0.85}
+                  strokeOpacity={isCurrentSec ? 0.95 : t.isFive ? 0.38 : 0.16}
+                  strokeLinecap="round"
+                />
+              );
+            })}
           </g>
 
           {/* 1. Minimal Rotating Outer Orbital Halo */}
@@ -957,6 +1028,18 @@ export function ClockDisplay({
             transform={`rotate(-90 ${CX} ${CY})`}
           />
           <g>
+            {isRunning && (
+              <motion.circle
+                cx={tipX}
+                cy={tipY}
+                r={10}
+                fill="none"
+                stroke={outerRingInk}
+                strokeWidth="1.4"
+                animate={{ r: [7, 13, 7], strokeOpacity: [0.55, 0.05, 0.55] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            )}
             <circle
               cx={tipX}
               cy={tipY}

@@ -11,6 +11,7 @@ import {
   Shield,
   Trash2,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppView,
@@ -27,6 +28,7 @@ interface AnalyticsPageProps {
   settings: PomodoroSettings;
   theme: ThemeMode;
   xpState: XpState;
+  currentDayKey?: string;
   onActivateStreakShield?: (targetDayKey: string) => void;
   onAddStudiedSession?: (minutes: number, completedAtIso: string) => void;
   onDeleteSession?: (sessionId: string) => void;
@@ -71,11 +73,18 @@ function toDayKey(date: Date): string {
 }
 
 function formatDurationMinutes(totalMinutes: number): string {
-  const rounded = Math.round(totalMinutes);
+  const rounded = Math.max(0, Math.round(totalMinutes));
   if (rounded < 60) return `${rounded}m`;
   const h = Math.floor(rounded / 60);
   const m = rounded % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function formatAxisTick(totalMinutes: number): string {
+  if (totalMinutes <= 0) return '0m';
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const h = totalMinutes / 60;
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
 }
 
 function formatDateLabel(date: Date): string {
@@ -104,6 +113,7 @@ export function AnalyticsPage({
   settings,
   theme,
   xpState,
+  currentDayKey,
   onActivateStreakShield,
   onAddStudiedSession,
   onDeleteSession,
@@ -120,12 +130,18 @@ export function AnalyticsPage({
 
   const [showAddStudied, setShowAddStudied] = useState(false);
   const [studiedMinutes, setStudiedMinutes] = useState(45);
-  const [studiedDate, setStudiedDate] = useState(() => toDayKey(new Date()));
+  const [studiedDate, setStudiedDate] = useState(() => currentDayKey || toDayKey(new Date()));
   const [studiedTime, setStudiedTime] = useState(() => {
     const d = new Date();
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   });
   const [studiedFeedback, setStudiedFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentDayKey) {
+      setStudiedDate((prev) => (prev < currentDayKey ? prev : currentDayKey));
+    }
+  }, [currentDayKey]);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartContainerWidth, setChartContainerWidth] = useState(720);
@@ -380,7 +396,7 @@ export function AnalyticsPage({
       prevPeriodFocusMinutes: prevFocusMin,
       prevLeadingFocusMinutes: prevLeadingMin,
     };
-  }, [range, offset, sessions]);
+  }, [currentDayKey, range, offset, sessions]);
 
   const deepMetrics = useMemo(() => {
     const focusList = periodSessions.filter((s) => s.type === 'focus');
@@ -527,6 +543,17 @@ export function AnalyticsPage({
       shieldCandidateKey === yesterdayKey ? 'Yesterday' : shieldCandidateKey === todayKey ? 'Today' : null;
 
     const todayFocusMinutes = dailyFocusMap.get(todayKey) || 0;
+    const yesterdayFocusMinutes = dailyFocusMap.get(yesterdayKey) || 0;
+    const todayVsYesterdayPct =
+      todayFocusMinutes <= 0 && yesterdayFocusMinutes <= 0
+        ? null
+        : yesterdayFocusMinutes <= 0
+          ? 100
+          : todayFocusMinutes <= 0
+            ? -100
+            : Math.round(
+                ((todayFocusMinutes - yesterdayFocusMinutes) / yesterdayFocusMinutes) * 100,
+              );
     const goalProgressPct = Math.min(
       100,
       Math.round((todayFocusMinutes / Math.max(1, settings.dailyGoalMinutes)) * 100),
@@ -613,12 +640,14 @@ export function AnalyticsPage({
       shieldCandidateKey,
       shieldCandidateLabel,
       todayFocusMinutes,
+      yesterdayFocusMinutes,
+      todayVsYesterdayPct,
       goalProgressPct,
       heatmapDays,
       rhythmDateLabel: formatDateLabel(rhythmTargetDate),
       rhythmSegments,
     };
-  }, [offset, periodSessions, range, sessions, settings.dailyGoalMinutes, xpState.shieldedDayKeys]);
+  }, [currentDayKey, offset, periodSessions, range, sessions, settings.dailyGoalMinutes, xpState.shieldedDayKeys]);
 
   const filteredLedger = useMemo(() => {
     return periodSessions.filter((s) => {
@@ -654,13 +683,13 @@ export function AnalyticsPage({
       urgesToday,
       xpToday,
     };
-  }, [sessions]);
+  }, [currentDayKey, sessions]);
 
   const handleCopyDebrief = async () => {
     const summary = [
       `Monolith Pomodoro — Daily Debrief (${new Date().toLocaleDateString()})`,
       `Rank: ${monolithRank.name} (${xpState.totalXp} XP)`,
-      `Focused: ${formatDurationMinutes(todayDebrief.focusMin)} across ${todayDebrief.focusCount} blocks (${deepMetrics.goalProgressPct}% of ${settings.dailyGoalMinutes}m goal)`,
+      `Focused: ${formatDurationMinutes(todayDebrief.focusMin)} across ${todayDebrief.focusCount} blocks (${deepMetrics.goalProgressPct}% of ${formatDurationMinutes(settings.dailyGoalMinutes)} goal)`,
       `Recovery Breaks: ${formatDurationMinutes(todayDebrief.breakMin)}`,
       `Zero-Urge Purity: ${todayDebrief.purityPct}% (${todayDebrief.urgesToday} urges logged)`,
       `Personal Peak Hour: ${globalPeakHour !== null ? `${String(globalPeakHour).padStart(2, '0')}:00` : 'Building baseline'}`,
@@ -678,13 +707,13 @@ export function AnalyticsPage({
   const handleSubmitStudiedTime = () => {
     if (!onAddStudiedSession) return;
     const cleanMin = Math.max(1, Math.min(720, Math.round(studiedMinutes) || 1));
-    const datePart = studiedDate || toDayKey(new Date());
+    const datePart = studiedDate || currentDayKey || toDayKey(new Date());
     const timePart = studiedTime || '12:00';
     const parsed = new Date(`${datePart}T${timePart}:00`);
     const iso = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
     onAddStudiedSession(cleanMin, iso);
     setShowAddStudied(false);
-    setStudiedFeedback(`Added ${cleanMin}m studied time`);
+    setStudiedFeedback(`Added ${formatDurationMinutes(cleanMin)} studied time`);
     window.setTimeout(() => setStudiedFeedback(null), 2600);
   };
 
@@ -730,16 +759,17 @@ export function AnalyticsPage({
     15,
     ...buckets.map((b) => Math.max(b.focusMinutes, b.breakMinutes)),
   );
-  const stepUnit = maxMinutesRaw <= 25 ? 5 : maxMinutesRaw <= 90 ? 15 : 30;
+  const stepUnit =
+    maxMinutesRaw <= 25 ? 5 : maxMinutesRaw <= 90 ? 15 : maxMinutesRaw <= 240 ? 30 : 60;
   const chartMax = Math.ceil(maxMinutesRaw / stepUnit) * stepUnit;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((r) => Math.round(chartMax * r));
 
   const svgWidth = Math.max(300, chartContainerWidth);
   const isNarrowChart = svgWidth < 540;
-  const svgHeight = isNarrowChart ? 350 : 440;
-  const padLeft = isNarrowChart ? 38 : 46;
+  const svgHeight = isNarrowChart ? 360 : 450;
+  const padLeft = isNarrowChart ? 42 : 50;
   const padRight = 10;
-  const padTop = 46;
+  const padTop = 58;
   const padBottom = range === 'weekly' && !isNarrowChart ? 48 : 40;
   const plotW = svgWidth - padLeft - padRight;
   const plotH = svgHeight - padTop - padBottom;
@@ -865,29 +895,43 @@ export function AnalyticsPage({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-9 pb-[max(2rem,env(safe-area-inset-bottom))] space-y-7">
-        {/* Control Toolbar: Range, Period Navigation & Clear Logs */}
+        {/* Control Toolbar: Range Pill, Period Navigation & Clear Logs */}
         <div className="flex flex-wrap items-center justify-between gap-3.5 pb-5 border-b-2 border-black/15 dark:border-white/20">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex p-1 rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black">
             {(
               [
                 { id: 'daily', label: 'Daily' },
                 { id: 'weekly', label: 'Weekly' },
                 { id: 'monthly', label: '30 Days' },
               ] as { id: AnalyticsRange; label: string }[]
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setRange(item.id);
-                  setOffset(0);
-                  setHoveredIndex(null);
-                }}
-                className={`px-3.5 py-2 text-xs rounded-lg ${bwOptionBtn(range === item.id)}`}
-              >
-                {item.label}
-              </button>
-            ))}
+            ).map((item) => {
+              const active = range === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setRange(item.id);
+                    setOffset(0);
+                    setHoveredIndex(null);
+                  }}
+                  className={`relative px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    active
+                      ? 'text-white dark:text-black'
+                      : 'text-black dark:text-white hover:opacity-70'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="analytics-range-pill"
+                      transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                      className="absolute inset-0 rounded-lg bg-black dark:bg-white"
+                    />
+                  )}
+                  <span className="relative z-10">{item.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -944,8 +988,13 @@ export function AnalyticsPage({
           </div>
         </div>
 
-        {/* 1. MAIN HERO VISUALIZATION: Full-Width Bar Chart with Combined Studied Time & % Badges */}
-        <section className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-6 space-y-4 shadow-[0_18px_48px_rgba(0,0,0,0.06)] dark:shadow-[0_18px_48px_rgba(255,255,255,0.05)]">
+        {/* 1. MAIN HERO VISUALIZATION: Full-Width Animated Bar Chart with Hours+Min Readouts & % Badges */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-6 space-y-4 shadow-[0_18px_48px_rgba(0,0,0,0.06)] dark:shadow-[0_18px_48px_rgba(255,255,255,0.05)]"
+        >
           <div className="flex flex-wrap items-start justify-between gap-3.5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -973,9 +1022,9 @@ export function AnalyticsPage({
                   </span>
                 )}
               </div>
-              <p className="text-xs sm:text-sm text-black/70 dark:text-white/75 mt-1">
+              <p className="text-xs sm:text-sm text-black/75 dark:text-white/80 mt-1">
                 {range === 'daily'
-                  ? 'Measured + already studied time across 24 hours · ▲/▼ % per slot'
+                  ? 'Fresh daily time by 2-hour slots · Counts in hours above 60m'
                   : range === 'weekly'
                     ? 'Monday through Sunday combined studied total · ▲/▼ % day-over-day'
                     : '30-day rolling combined volume · Tap or hover any bar for % delta'}
@@ -984,8 +1033,10 @@ export function AnalyticsPage({
 
             <div className="flex flex-wrap items-center gap-3">
               {onAddStudiedSession && (
-                <button
+                <motion.button
                   type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => setShowAddStudied((prev) => !prev)}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg ${
                     showAddStudied ? bwOptionBtn(false) : bwSolidBtn
@@ -993,7 +1044,7 @@ export function AnalyticsPage({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{showAddStudied ? 'Close Form' : 'Add Studied Time'}</span>
-                </button>
+                </motion.button>
               )}
 
               <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
@@ -1029,133 +1080,151 @@ export function AnalyticsPage({
             </div>
           </div>
 
-          {studiedFeedback && (
-            <div className="rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black px-3.5 py-2 text-xs font-bold flex items-center justify-between">
-              <span>{studiedFeedback}</span>
-              <span>Combined in Chart</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {studiedFeedback && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black px-3.5 py-2 text-xs font-bold flex items-center justify-between"
+              >
+                <span>{studiedFeedback}</span>
+                <span>Combined in Chart</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {showAddStudied && onAddStudiedSession && (
-            <div className="rounded-xl border-2 border-black dark:border-white p-4 space-y-4 bg-white dark:bg-black">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-bold">Add Already Studied Time</h3>
-                  <p className="text-xs text-black/70 dark:text-white/75">
-                    Stacks directly onto your measured focus bars in the chart.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {[15, 30, 45, 60, 90, 120].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setStudiedMinutes(preset)}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-mono-tabular ${bwOptionBtn(
-                        studiedMinutes === preset,
-                      )}`}
-                    >
-                      {preset}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
-                    Duration (Minutes)
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      aria-label="Decrease studied minutes"
-                      onClick={() => setStudiedMinutes((v) => Math.max(1, v - 5))}
-                      className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <input
-                      type="number"
-                      min={1}
-                      max={720}
-                      value={studiedMinutes}
-                      onChange={(e) =>
-                        setStudiedMinutes(
-                          Math.max(1, Math.min(720, Number(e.target.value) || 1)),
-                        )
-                      }
-                      className="min-w-0 flex-1 h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-center text-sm font-bold font-mono-tabular"
-                    />
-                    <button
-                      type="button"
-                      aria-label="Increase studied minutes"
-                      onClick={() => setStudiedMinutes((v) => Math.min(720, v + 5))}
-                      className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+          <AnimatePresence initial={false}>
+            {showAddStudied && onAddStudiedSession && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="rounded-xl border-2 border-black dark:border-white p-4 space-y-4 bg-white dark:bg-black">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold">Add Already Studied Time</h3>
+                      <p className="text-xs text-black/75 dark:text-white/80">
+                        Stacks directly onto your measured focus bars in the chart.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[15, 30, 45, 60, 90, 120].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setStudiedMinutes(preset)}
+                          className={`px-2.5 py-1 text-xs rounded-lg font-mono-tabular ${bwOptionBtn(
+                            studiedMinutes === preset,
+                          )}`}
+                        >
+                          {formatDurationMinutes(preset)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider">
-                      Date
-                    </label>
-                    <div className="flex items-center gap-2 text-[11px] font-bold">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                        Duration ({formatDurationMinutes(studiedMinutes)})
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label="Decrease studied minutes"
+                          onClick={() => setStudiedMinutes((v) => Math.max(1, v - 5))}
+                          className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={studiedMinutes}
+                          onChange={(e) =>
+                            setStudiedMinutes(
+                              Math.max(1, Math.min(720, Number(e.target.value) || 1)),
+                            )
+                          }
+                          className="min-w-0 flex-1 h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-center text-sm font-bold font-mono-tabular"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Increase studied minutes"
+                          onClick={() => setStudiedMinutes((v) => Math.min(720, v + 5))}
+                          className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wider">
+                          Date
+                        </label>
+                        <div className="flex items-center gap-2 text-[11px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setStudiedDate(toDayKey(new Date()))}
+                            className="underline cursor-pointer"
+                          >
+                            Today
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const y = new Date();
+                              y.setDate(y.getDate() - 1);
+                              setStudiedDate(toDayKey(y));
+                            }}
+                            className="underline cursor-pointer"
+                          >
+                            Yesterday
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="date"
+                        value={studiedDate}
+                        max={toDayKey(new Date())}
+                        onChange={(e) => setStudiedDate(e.target.value)}
+                        className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[110px]">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                          Time
+                        </label>
+                        <input
+                          type="time"
+                          value={studiedTime}
+                          onChange={(e) => setStudiedTime(e.target.value)}
+                          className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
+                        />
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setStudiedDate(toDayKey(new Date()))}
-                        className="underline cursor-pointer"
+                        onClick={handleSubmitStudiedTime}
+                        className={`h-9 px-4 text-xs font-bold rounded-lg ${bwSolidBtn}`}
                       >
-                        Today
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const y = new Date();
-                          y.setDate(y.getDate() - 1);
-                          setStudiedDate(toDayKey(y));
-                        }}
-                        className="underline cursor-pointer"
-                      >
-                        Yesterday
+                        Add to Chart
                       </button>
                     </div>
                   </div>
-                  <input
-                    type="date"
-                    value={studiedDate}
-                    max={toDayKey(new Date())}
-                    onChange={(e) => setStudiedDate(e.target.value)}
-                    className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
-                  />
                 </div>
-
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5">
-                      Time
-                    </label>
-                    <input
-                      type="time"
-                      value={studiedTime}
-                      onChange={(e) => setStudiedTime(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white text-xs font-bold font-mono-tabular"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSubmitStudiedTime}
-                    className={`h-9 px-4 text-xs font-bold rounded-lg ${bwSolidBtn}`}
-                  >
-                    Add to Chart
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div ref={chartContainerRef} className="relative w-full">
             <svg
@@ -1199,7 +1268,7 @@ export function AnalyticsPage({
                 </pattern>
               </defs>
 
-              {/* Horizontal Gridlines & Y-Axis */}
+              {/* Horizontal Gridlines & Y-Axis (Counts in Hours when >= 60m) */}
               {yTicks.map((val) => {
                 const y = padTop + plotH - (val / chartMax) * plotH;
                 return (
@@ -1222,21 +1291,24 @@ export function AnalyticsPage({
                       fontWeight="700"
                       fontFamily="var(--font-mono)"
                     >
-                      {val}m
+                      {formatAxisTick(val)}
                     </text>
                   </g>
                 );
               })}
 
-              {/* Subtle Trajectory Line connecting Studied Bar Crowns */}
+              {/* Animated Trajectory Line connecting Studied Bar Crowns */}
               {deepMetrics.focusMinutes > 0 && (
-                <path
+                <motion.path
+                  key={`trend-${range}-${offset}`}
                   d={trendPathD}
                   fill="none"
                   stroke={inkColor}
-                  strokeOpacity="0.28"
-                  strokeWidth="1.75"
+                  strokeWidth="1.85"
                   strokeDasharray="4 4"
+                  initial={{ pathLength: 0, strokeOpacity: 0 }}
+                  animate={{ pathLength: 1, strokeOpacity: 0.3 }}
+                  transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
                 />
               )}
 
@@ -1265,6 +1337,25 @@ export function AnalyticsPage({
                 const manualBarY = focusBarY;
                 const measuredBarY = baseY - measuredPartH;
 
+                const durationStr = formatDurationMinutes(bucket.focusMinutes);
+                const showInsideMeasured =
+                  range !== 'monthly' &&
+                  bucket.focusMinutes >= 1 &&
+                  measuredPartH >= 28 &&
+                  focusBarW >= (durationStr.length > 3 ? 42 : 30);
+                const showInsideManualPill =
+                  range !== 'monthly' &&
+                  bucket.focusMinutes >= 1 &&
+                  !showInsideMeasured &&
+                  measuredPartH < 28 &&
+                  manualPartH >= 30 &&
+                  focusBarW >= 40;
+                const showAboveBarLabel =
+                  range !== 'monthly' &&
+                  bucket.focusMinutes >= 1 &&
+                  !showInsideMeasured &&
+                  !showInsideManualPill;
+
                 const delta = bucketDeltas[idx];
                 const showDeltaInsideGraph =
                   delta !== null &&
@@ -1290,15 +1381,17 @@ export function AnalyticsPage({
                   padLeft + badgeWidth / 2,
                   Math.min(svgWidth - padRight - badgeWidth / 2, badgeCenterX),
                 );
-                const badgeBottomY = Math.max(padTop - 8, anchorTopY - 10);
+                const badgeOffset = showAboveBarLabel ? 24 : 10;
+                const badgeBottomY = Math.max(padTop - 8, anchorTopY - badgeOffset);
                 const badgeTopY = badgeBottomY - badgeHeight;
 
                 const barOpacity = hoveredIndex === null || isHovered ? 1 : 0.58;
                 const barRadius = range === 'monthly' ? 2 : 5;
+                const barAnimDelay = Math.min(idx * 0.035, 0.28);
 
                 return (
                   <g
-                    key={bucket.key}
+                    key={`${range}-${offset}-${bucket.key}`}
                     onMouseEnter={() => setHoveredIndex(idx)}
                     onMouseLeave={() => setHoveredIndex(null)}
                     onClick={() => setHoveredIndex(hoveredIndex === idx ? null : idx)}
@@ -1315,31 +1408,37 @@ export function AnalyticsPage({
                       fillOpacity={isHovered ? 0.08 : range !== 'monthly' ? 0.035 : 0}
                     />
 
-                    {/* Solid Measured Focus Segment (Bottom) */}
+                    {/* Animated Solid Measured Focus Segment (Bottom) */}
                     {measuredPartH > 0 && (
-                      <rect
+                      <motion.rect
                         x={focusX}
-                        y={measuredBarY}
                         width={focusBarW}
-                        height={measuredPartH}
                         rx={manualPartH > 0 ? 0 : barRadius}
                         fill={inkColor}
                         fillOpacity={barOpacity}
+                        initial={{ y: baseY, height: 0 }}
+                        animate={{ y: measuredBarY, height: measuredPartH }}
+                        transition={{ duration: 0.52, delay: barAnimDelay, ease: [0.16, 1, 0.3, 1] }}
                       />
                     )}
 
-                    {/* Added Studied Time Segment (Stacked Top with Crisp Monochrome Horizontal Stripes) */}
+                    {/* Animated Added Studied Time Segment (Stacked Top) */}
                     {manualPartH > 0 && (
-                      <rect
+                      <motion.rect
                         x={focusX}
-                        y={manualBarY}
                         width={focusBarW}
-                        height={manualPartH}
                         rx={barRadius}
                         fill={`url(#${manualPatternId})`}
                         fillOpacity={barOpacity}
                         stroke={inkColor}
                         strokeWidth={range === 'monthly' ? 1.2 : 2}
+                        initial={{ y: baseY, height: 0 }}
+                        animate={{ y: manualBarY, height: manualPartH }}
+                        transition={{
+                          duration: 0.52,
+                          delay: barAnimDelay + 0.05,
+                          ease: [0.16, 1, 0.3, 1],
+                        }}
                       />
                     )}
 
@@ -1355,8 +1454,8 @@ export function AnalyticsPage({
                       />
                     )}
 
-                    {/* Bold Minutes Readout Inside Tall Measured Bars */}
-                    {range !== 'monthly' && bucket.focusMinutes >= 1 && measuredPartH >= 26 && (
+                    {/* Bold Duration Readout Inside Tall Measured Bars (Hours if >60m) */}
+                    {showInsideMeasured && (
                       <text
                         x={focusX + focusBarW / 2}
                         y={measuredBarY + 18}
@@ -1366,52 +1465,69 @@ export function AnalyticsPage({
                         fontWeight="800"
                         fontFamily="var(--font-mono)"
                       >
-                        {Math.round(bucket.focusMinutes)}m
+                        {durationStr}
                       </text>
                     )}
 
-                    {/* Inverted Minutes Pill Inside Tall Manual-Only Bars */}
-                    {range !== 'monthly' &&
-                      bucket.focusMinutes >= 1 &&
-                      measuredPartH < 26 &&
-                      manualPartH >= 26 && (
-                        <g>
-                          <rect
-                            x={focusX + focusBarW / 2 - Math.min(focusBarW / 2 - 2, 18)}
-                            y={manualBarY + 5}
-                            width={Math.min(focusBarW - 4, 36)}
-                            height={17}
-                            rx="4"
-                            fill={inkColor}
-                          />
-                          <text
-                            x={focusX + focusBarW / 2}
-                            y={manualBarY + 14}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fill={invertedInk}
-                            fontSize={isNarrowChart ? '10' : '11'}
-                            fontWeight="800"
-                            fontFamily="var(--font-mono)"
-                          >
-                            {Math.round(bucket.focusMinutes)}m
-                          </text>
-                        </g>
-                      )}
+                    {/* Inverted Duration Pill Inside Tall Manual-Only Bars */}
+                    {showInsideManualPill && (
+                      <g>
+                        <rect
+                          x={focusX + focusBarW / 2 - Math.min(focusBarW / 2 - 2, 22)}
+                          y={manualBarY + 5}
+                          width={Math.min(focusBarW - 4, 44)}
+                          height={18}
+                          rx="4"
+                          fill={inkColor}
+                        />
+                        <text
+                          x={focusX + focusBarW / 2}
+                          y={manualBarY + 14}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill={invertedInk}
+                          fontSize={isNarrowChart ? '10' : '11'}
+                          fontWeight="800"
+                          fontFamily="var(--font-mono)"
+                        >
+                          {durationStr}
+                        </text>
+                      </g>
+                    )}
+
+                    {/* High-Visibility Time Label Above Shorter/Narrow Bars */}
+                    {showAboveBarLabel && (
+                      <text
+                        x={focusX + focusBarW / 2}
+                        y={focusBarY - 6}
+                        textAnchor="middle"
+                        fill={inkColor}
+                        fontSize={isNarrowChart ? '10' : '11.5'}
+                        fontWeight="800"
+                        fontFamily="var(--font-mono)"
+                      >
+                        {durationStr}
+                      </text>
+                    )}
 
                     {/* Hatched Break Bar (shown when breaks exist) */}
                     {hasAnyBreaks &&
                       (breakH > 0 ? (
-                        <rect
+                        <motion.rect
                           x={breakX}
-                          y={breakBarY}
                           width={breakBarW}
-                          height={renderedBreakH}
                           rx={range === 'monthly' ? 2 : 4}
                           fill={`url(#${hatchPatternId})`}
                           stroke={inkColor}
                           strokeWidth="1.8"
                           strokeOpacity={barOpacity}
+                          initial={{ y: baseY, height: 0 }}
+                          animate={{ y: breakBarY, height: renderedBreakH }}
+                          transition={{
+                            duration: 0.48,
+                            delay: barAnimDelay + 0.04,
+                            ease: [0.16, 1, 0.3, 1],
+                          }}
                         />
                       ) : (
                         <rect
@@ -1438,8 +1554,12 @@ export function AnalyticsPage({
 
                     {/* Crisp Monochrome % Increase/Decrease Indicator Inside the Graph */}
                     {showDeltaInsideGraph && (
-                      <g>
-                        {focusH > 0 && (
+                      <motion.g
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.35, delay: barAnimDelay + 0.14 }}
+                      >
+                        {focusH > 0 && !showAboveBarLabel && (
                           <line
                             x1={focusX + focusBarW / 2}
                             y1={badgeBottomY}
@@ -1472,7 +1592,7 @@ export function AnalyticsPage({
                         >
                           {deltaText}
                         </text>
-                      </g>
+                      </motion.g>
                     )}
 
                     {/* X-Axis Labels */}
@@ -1554,38 +1674,82 @@ export function AnalyticsPage({
                   </div>
                   <div className="flex flex-wrap items-center gap-4 font-mono-tabular">
                     <span>
-                      Studied: <strong>{Math.round(buckets[hoveredIndex].focusMinutes)}m</strong>
+                      Studied:{' '}
+                      <strong>{formatDurationMinutes(buckets[hoveredIndex].focusMinutes)}</strong>
                       {buckets[hoveredIndex].manualMinutes > 0
-                        ? ` (${Math.round(buckets[hoveredIndex].measuredMinutes)}m measured + ${Math.round(buckets[hoveredIndex].manualMinutes)}m added)`
+                        ? ` (${formatDurationMinutes(buckets[hoveredIndex].measuredMinutes)} measured + ${formatDurationMinutes(buckets[hoveredIndex].manualMinutes)} added)`
                         : ` (${buckets[hoveredIndex].focusCount})`}
                     </span>
                     <span>
-                      Breaks: <strong>{Math.round(buckets[hoveredIndex].breakMinutes)}m</strong> (
+                      Breaks:{' '}
+                      <strong>{formatDurationMinutes(buckets[hoveredIndex].breakMinutes)}</strong> (
                       {buckets[hoveredIndex].breakCount})
                     </span>
                   </div>
                 </>
               ) : (
                 <span className="font-medium text-black/75 dark:text-white/80">
-                  Tap or hover any bar to inspect measured + added studied minutes and % change.
+                  Tap or hover any bar to inspect measured + added studied time and % change.
                 </span>
               )}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        {/* 2. High-Contrast 4-Card KPI Strip */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Primary Inverted High-Contrast Hero Metric */}
+        {/* 2. High-Contrast 4-Card KPI Strip (with Today's Fresh Daily Counter First) */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+        >
+          {/* Primary Inverted High-Contrast Hero Metric: Today's Fresh Measurement */}
           <div className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black p-4 sm:p-5 flex flex-col justify-between gap-2">
-            <div className="text-xs font-bold uppercase tracking-wider opacity-80">
-              Focused Time
+            <div className="flex items-center justify-between gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider opacity-85">
+                Today&apos;s Studied
+              </span>
+              {deepMetrics.todayVsYesterdayPct !== null && (
+                <span className="text-[11px] font-bold font-mono-tabular px-1.5 py-0.5 rounded border border-current">
+                  {deepMetrics.todayVsYesterdayPct > 0
+                    ? `▲ +${deepMetrics.todayVsYesterdayPct}%`
+                    : deepMetrics.todayVsYesterdayPct < 0
+                      ? `▼ ${deepMetrics.todayVsYesterdayPct}%`
+                      : '0%'}
+                </span>
+              )}
+            </div>
+            <div className="text-3xl sm:text-4xl font-bold font-mono-tabular">
+              {formatDurationMinutes(deepMetrics.todayFocusMinutes)}
+            </div>
+            <div className="space-y-1.5">
+              <div className="text-xs font-mono-tabular opacity-85">
+                {deepMetrics.todayFocusMinutes > 0
+                  ? `${deepMetrics.goalProgressPct}% of ${formatDurationMinutes(settings.dailyGoalMinutes)} goal`
+                  : `Fresh day · Goal ${formatDurationMinutes(settings.dailyGoalMinutes)}`}
+              </div>
+              <div className="h-1.5 w-full rounded-full border border-current p-px overflow-hidden">
+                <motion.div
+                  className="h-full bg-white dark:bg-black rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${deepMetrics.goalProgressPct}%` }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-5 flex flex-col justify-between gap-2">
+            <div className="text-xs font-bold uppercase tracking-wider text-black/75 dark:text-white/80">
+              {range === 'daily' ? 'Selected Day' : range === 'weekly' ? 'Weekly Total' : '30-Day Total'}
             </div>
             <div className="text-3xl sm:text-4xl font-bold font-mono-tabular">
               {formatDurationMinutes(deepMetrics.focusMinutes)}
             </div>
-            <div className="text-xs font-mono-tabular opacity-85">
-              {deepMetrics.focusSessions} sessions · {deepMetrics.focusSharePct}% focus share
+            <div className="text-xs font-mono-tabular text-black/75 dark:text-white/80">
+              {deepMetrics.manualFocusMinutes > 0
+                ? `${formatDurationMinutes(deepMetrics.measuredFocusMinutes)} + ${formatDurationMinutes(deepMetrics.manualFocusMinutes)} added`
+                : `${deepMetrics.focusSessions} sessions · ${deepMetrics.focusSharePct}% focus`}
             </div>
           </div>
 
@@ -1608,37 +1772,16 @@ export function AnalyticsPage({
 
           <div className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-5 flex flex-col justify-between gap-2">
             <div className="text-xs font-bold uppercase tracking-wider text-black/75 dark:text-white/80">
-              Monolith Rank &amp; XP
-            </div>
-            <div className="text-3xl sm:text-4xl font-bold font-mono-tabular">
-              {xpState.totalXp} XP
-            </div>
-            <div className="text-xs font-mono-tabular text-black/75 dark:text-white/80">
-              {monolithRank.name} (Tier {monolithRank.tier}/5) ·{' '}
-              {Math.floor(xpState.carryFocusSeconds / 60)}/30m
-            </div>
-          </div>
-
-          <div className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-4 sm:p-5 flex flex-col justify-between gap-2">
-            <div className="text-xs font-bold uppercase tracking-wider text-black/75 dark:text-white/80">
               Consistency Streak
             </div>
             <div className="text-3xl sm:text-4xl font-bold font-mono-tabular">
               {deepMetrics.currentStreak}d
             </div>
-            <div className="space-y-1.5">
-              <div className="text-xs font-mono-tabular text-black/75 dark:text-white/80">
-                Best {deepMetrics.bestStreak}d · Today {deepMetrics.goalProgressPct}% of goal
-              </div>
-              <div className="h-2 w-full rounded-full border border-black dark:border-white p-0.5">
-                <div
-                  className="h-full bg-black dark:bg-white rounded-full transition-all"
-                  style={{ width: `${deepMetrics.goalProgressPct}%` }}
-                />
-              </div>
+            <div className="text-xs font-mono-tabular text-black/75 dark:text-white/80">
+              Best {deepMetrics.bestStreak}d · {xpState.totalXp} XP ({monolithRank.name})
             </div>
           </div>
-        </section>
+        </motion.section>
 
         {/* 3. 24-Hour Polar Clock (4 cols) + Mastery Progression & Streak Shield (8 cols) */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -1652,7 +1795,7 @@ export function AnalyticsPage({
               </div>
               <span className="text-xs font-mono-tabular font-bold px-2.5 py-1 rounded-lg border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black shrink-0">
                 {hoveredPolarHour !== null
-                  ? `${String(hoveredPolarHour).padStart(2, '0')}:00 · ${Math.round(deepMetrics.hourHistogram[hoveredPolarHour])}m`
+                  ? `${String(hoveredPolarHour).padStart(2, '0')}:00 · ${formatDurationMinutes(deepMetrics.hourHistogram[hoveredPolarHour])}`
                   : deepMetrics.peakHour >= 0
                     ? `Peak ${String(deepMetrics.peakHour).padStart(2, '0')}:00`
                     : 'No Peak'}
@@ -1838,10 +1981,11 @@ export function AnalyticsPage({
                     {monolithRank.nextXp !== null ? `${monolithRank.nextXp} XP` : '700+ XP'}
                   </span>
                 </div>
-                <div className="h-3 w-full rounded-full border-2 border-black dark:border-white p-0.5">
-                  <div
-                    className="h-full bg-black dark:bg-white rounded-full transition-all"
-                    style={{
+                <div className="h-3 w-full rounded-full border-2 border-black dark:border-white p-0.5 overflow-hidden">
+                  <motion.div
+                    className="h-full bg-black dark:bg-white rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{
                       width: `${
                         monolithRank.nextXp === null
                           ? 100
@@ -1855,6 +1999,7 @@ export function AnalyticsPage({
                             )
                       }%`,
                     }}
+                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                   />
                 </div>
               </div>
@@ -2001,7 +2146,7 @@ export function AnalyticsPage({
               {deepMetrics.rhythmSegments.map((seg) => (
                 <div
                   key={seg.id}
-                  title={`${seg.type === 'focus' ? 'Focus' : 'Break'} (${seg.durationMinutes}m) · ${seg.timeLabel}`}
+                  title={`${seg.type === 'focus' ? 'Focus' : 'Break'} (${formatDurationMinutes(seg.durationMinutes)}) · ${seg.timeLabel}`}
                   className={`absolute top-1.5 bottom-1.5 rounded-[4px] ${
                     seg.type === 'focus'
                       ? 'bg-black dark:bg-white'
@@ -2039,9 +2184,10 @@ export function AnalyticsPage({
                 </span>
               </div>
               <div className="h-5 w-full rounded-lg border-2 border-black dark:border-white p-0.5 overflow-hidden">
-                <div
-                  className="h-full bg-black dark:bg-white rounded-[4px] transition-all"
-                  style={{
+                <motion.div
+                  className="h-full bg-black dark:bg-white rounded-[4px]"
+                  initial={{ width: 0 }}
+                  animate={{
                     width: `${
                       deepMetrics.focusMinutes > 0
                         ? Math.round(
@@ -2050,6 +2196,7 @@ export function AnalyticsPage({
                         : 0
                     }%`,
                   }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                 />
               </div>
             </div>
@@ -2063,9 +2210,10 @@ export function AnalyticsPage({
                 </span>
               </div>
               <div className="h-5 w-full rounded-lg border-2 border-black dark:border-white p-0.5 overflow-hidden">
-                <div
-                  className="h-full rounded-[4px] border border-black dark:border-white transition-all"
-                  style={{
+                <motion.div
+                  className="h-full rounded-[4px] border border-black dark:border-white"
+                  initial={{ width: 0 }}
+                  animate={{
                     width: `${
                       deepMetrics.focusMinutes > 0
                         ? Math.round(
@@ -2073,6 +2221,9 @@ export function AnalyticsPage({
                           )
                         : 0
                     }%`,
+                  }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                  style={{
                     backgroundImage: isDark
                       ? 'repeating-linear-gradient(-45deg, #ffffff, #ffffff 2px, transparent 2px, transparent 5px)'
                       : 'repeating-linear-gradient(-45deg, #000000, #000000 2px, transparent 2px, transparent 5px)',
@@ -2085,14 +2236,16 @@ export function AnalyticsPage({
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="font-bold">Today&apos;s Daily Target</span>
                 <span className="font-mono-tabular font-semibold">
-                  {Math.round(deepMetrics.todayFocusMinutes)}m / {settings.dailyGoalMinutes}m (
-                  {deepMetrics.goalProgressPct}%)
+                  {formatDurationMinutes(deepMetrics.todayFocusMinutes)} /{' '}
+                  {formatDurationMinutes(settings.dailyGoalMinutes)} ({deepMetrics.goalProgressPct}%)
                 </span>
               </div>
               <div className="h-5 w-full rounded-lg border-2 border-black dark:border-white p-0.5 overflow-hidden">
-                <div
-                  className="h-full bg-black dark:bg-white rounded-[4px] transition-all"
-                  style={{ width: `${deepMetrics.goalProgressPct}%` }}
+                <motion.div
+                  className="h-full bg-black dark:bg-white rounded-[4px]"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${deepMetrics.goalProgressPct}%` }}
+                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                 />
               </div>
             </div>
@@ -2122,9 +2275,11 @@ export function AnalyticsPage({
                       </span>
                     </div>
                     <div className="h-6 w-full rounded-lg border-2 border-black dark:border-white p-0.5 overflow-hidden bg-white dark:bg-black">
-                      <div
-                        className="h-full bg-black dark:bg-white rounded-[4px] transition-all"
-                        style={{ width: `${pct}%` }}
+                      <motion.div
+                        className="h-full bg-black dark:bg-white rounded-[4px]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
                       />
                     </div>
                   </div>
@@ -2179,9 +2334,11 @@ export function AnalyticsPage({
                         </span>
                       </div>
                       <div className="h-6 w-full rounded-lg border-2 border-black dark:border-white p-0.5 overflow-hidden bg-white dark:bg-black">
-                        <div
-                          className="h-full bg-black dark:bg-white rounded-[4px] transition-all"
-                          style={{ width: `${pct}%` }}
+                        <motion.div
+                          className="h-full bg-black dark:bg-white rounded-[4px]"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
                         />
                       </div>
                     </div>
@@ -2207,7 +2364,7 @@ export function AnalyticsPage({
               <div>
                 <h2 className="text-base font-bold">28-Day Focus Density</h2>
                 <p className="text-xs text-black/70 dark:text-white/75 mt-0.5">
-                  Daily goal threshold: {settings.dailyGoalMinutes}m
+                  Daily goal threshold: {formatDurationMinutes(settings.dailyGoalMinutes)}
                 </p>
               </div>
               <span className="font-mono-tabular font-bold px-2 py-0.5 rounded-md border border-black dark:border-white">
@@ -2231,7 +2388,7 @@ export function AnalyticsPage({
                 return (
                   <div
                     key={day.key}
-                    title={`${day.label}: ${Math.round(day.minutes)}m focused${day.shielded ? ' · Shielded' : ''}`}
+                    title={`${day.label}: ${formatDurationMinutes(day.minutes)} focused${day.shielded ? ' · Shielded' : ''}`}
                     className={`aspect-square rounded-[4px] ${
                       day.shielded
                         ? 'border-2 border-black dark:border-white'

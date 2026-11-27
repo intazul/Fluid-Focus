@@ -9,6 +9,7 @@ import {
   Square,
   Volume2,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import {
@@ -60,6 +61,14 @@ const bwOptionBtn = (active: boolean) =>
       ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
       : 'bg-white text-black dark:bg-black dark:text-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black font-semibold'
   }`;
+
+function formatCompactMinutes(totalMinutes: number): string {
+  const rounded = Math.max(0, Math.round(totalMinutes));
+  if (rounded < 60) return `${rounded}m`;
+  const hrs = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  return mins === 0 ? `${hrs}h` : `${hrs}h ${mins}m`;
+}
 
 export function SettingsPage({
   theme,
@@ -131,17 +140,19 @@ export function SettingsPage({
         role="switch"
         aria-checked={checked}
         onClick={onToggle}
-        className={`relative w-12 h-6 rounded-full border-2 border-black dark:border-white transition-colors shrink-0 cursor-pointer ${
+        className={`relative w-12 h-6 rounded-full border-2 border-black dark:border-white transition-colors shrink-0 cursor-pointer flex items-center px-0.5 ${
           checked
-            ? 'bg-black dark:bg-white'
-            : 'bg-white dark:bg-black'
+            ? 'bg-black dark:bg-white justify-end'
+            : 'bg-white dark:bg-black justify-start'
         }`}
       >
-        <span
-          className={`block w-4 h-4 rounded-full transition-transform ${
+        <motion.span
+          layout
+          transition={{ type: 'spring', stiffness: 520, damping: 34 }}
+          className={`block w-4 h-4 rounded-full ${
             checked
-              ? 'translate-x-6 bg-white dark:bg-black'
-              : 'translate-x-1 bg-black dark:bg-white'
+              ? 'bg-white dark:bg-black'
+              : 'bg-black dark:bg-white'
           }`}
         />
       </button>
@@ -166,21 +177,25 @@ export function SettingsPage({
     onChange: (next: number) => void;
   }) => {
     const clamp = (n: number) => Math.max(min, Math.min(max, n));
+    const showHoursHint = unit.startsWith('min') && value >= 60;
     return (
-      <div className="min-w-0 rounded-xl border border-black/15 dark:border-white/20 p-3 space-y-2">
+      <div className="min-w-0 rounded-xl border border-black/15 dark:border-white/20 p-3 space-y-2 transition-colors hover:border-black/40 dark:hover:border-white/40">
         <div className="flex items-center justify-between gap-2 text-xs">
           <span className="font-semibold text-black/80 dark:text-white/80">{label}</span>
-          <span className="font-mono-tabular text-black/75 dark:text-white/80">{unit}</span>
+          <span className="font-mono-tabular text-black/75 dark:text-white/80">
+            {showHoursHint ? formatCompactMinutes(value) : unit}
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             type="button"
             aria-label={`Decrease ${label}`}
             onClick={() => onChange(clamp(value - step))}
             className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
           >
             <Minus className="w-3.5 h-3.5" />
-          </button>
+          </motion.button>
           <input
             type="number"
             min={min}
@@ -189,14 +204,15 @@ export function SettingsPage({
             onChange={(e) => onChange(clamp(Number(e.target.value) || min))}
             className="w-full min-w-0 h-9 px-2 text-center text-sm font-bold font-mono-tabular rounded-lg border-2 border-black dark:border-white bg-white dark:bg-black text-black dark:text-white focus:outline-none"
           />
-          <button
+          <motion.button
+            whileTap={{ scale: 0.92 }}
             type="button"
             aria-label={`Increase ${label}`}
             onClick={() => onChange(clamp(value + step))}
             className={`w-9 h-9 inline-flex items-center justify-center rounded-lg ${bwSolidBtn}`}
           >
             <Plus className="w-3.5 h-3.5" />
-          </button>
+          </motion.button>
         </div>
       </div>
     );
@@ -243,7 +259,11 @@ export function SettingsPage({
             Changes save instantly and apply to your clock and focus sessions.
           </p>
 
-          <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Settings categories">
+          <div
+            className="flex flex-wrap items-center gap-1 p-1 rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black"
+            role="tablist"
+            aria-label="Settings categories"
+          >
             {(
               [
                 { id: 'all', label: 'All Settings' },
@@ -252,24 +272,43 @@ export function SettingsPage({
                 { id: 'habits', label: 'Focus Habits' },
                 { id: 'sound', label: 'Sound & Data' },
               ] as { id: SettingsTab; label: string }[]
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2 text-xs rounded-lg ${bwOptionBtn(activeTab === tab.id)}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            ).map((tab) => {
+              const selected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`relative px-3 py-1.5 text-xs rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
+                    selected
+                      ? 'text-white dark:text-black font-bold'
+                      : 'text-black dark:text-white font-semibold hover:bg-black/10 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {selected && (
+                    <motion.span
+                      layoutId="settings-tab-pill"
+                      transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                      className="absolute inset-0 rounded-lg bg-black dark:bg-white"
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* 01. Clock & Visual Contrast */}
         {showClock && (
-          <section className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6"
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold">01. Clock &amp; Visual Contrast</h2>
@@ -394,12 +433,17 @@ export function SettingsPage({
                 />
               </div>
             </div>
-          </section>
+          </motion.section>
         )}
 
         {/* 02. Timers, Daily Targets & Custom Profiles */}
         {showIntervals && (
-          <section className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6"
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold">02. Timers, Targets &amp; Profiles</h2>
@@ -597,12 +641,17 @@ export function SettingsPage({
                 })}
               </div>
             </div>
-          </section>
+          </motion.section>
         )}
 
         {/* 03. Focus Habits & XP Mastery */}
         {showHabits && (
-          <section className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-5">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-5"
+          >
             <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-black/10 dark:border-white/15">
               <div>
                 <h2 className="text-base font-bold">03. Focus Habits &amp; XP Mastery</h2>
@@ -695,7 +744,7 @@ export function SettingsPage({
                 />
                 <ToggleRow
                   title="Periodic Presence Check-In"
-                  desc={`Require a tap every ${settings.presenceIntervalMinutes}m (min 30m) in Countdown & Count Up`}
+                  desc={`Require a tap every ${formatCompactMinutes(settings.presenceIntervalMinutes)} (min 30m) in Countdown & Count Up`}
                   checked={settings.presenceCheckEnabled}
                   onToggle={() =>
                     updateField('presenceCheckEnabled', !settings.presenceCheckEnabled)
@@ -704,46 +753,59 @@ export function SettingsPage({
               </div>
             </div>
 
-            {settings.presenceCheckEnabled && (
-              <div className="pt-4 border-t border-black/10 dark:border-white/15 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                <div className="md:col-span-5">
-                  <StepperField
-                    label="Presence Check-In Interval"
-                    value={settings.presenceIntervalMinutes}
-                    min={MIN_PRESENCE_INTERVAL_MINUTES}
-                    max={MAX_PRESENCE_INTERVAL_MINUTES}
-                    step={5}
-                    unit="min (≥30m)"
-                    onChange={(v) => updateField('presenceIntervalMinutes', v)}
-                  />
-                </div>
-                <div className="md:col-span-7 space-y-2">
-                  <div className="text-xs font-semibold text-black/75 dark:text-white/75">
-                    Quick Verification Intervals
+            <AnimatePresence initial={false}>
+              {settings.presenceCheckEnabled && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="pt-4 border-t border-black/10 dark:border-white/15 grid grid-cols-1 md:grid-cols-12 gap-4 items-center"
+                >
+                  <div className="md:col-span-5">
+                    <StepperField
+                      label="Presence Check-In Interval"
+                      value={settings.presenceIntervalMinutes}
+                      min={MIN_PRESENCE_INTERVAL_MINUTES}
+                      max={MAX_PRESENCE_INTERVAL_MINUTES}
+                      step={5}
+                      unit="min (≥30m)"
+                      onChange={(v) => updateField('presenceIntervalMinutes', v)}
+                    />
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[30, 45, 60, 90, 120].map((pm) => (
-                      <button
-                        key={pm}
-                        type="button"
-                        onClick={() => updateField('presenceIntervalMinutes', pm)}
-                        className={`flex-1 min-w-[54px] px-3 py-2 text-xs font-mono-tabular rounded-lg ${bwOptionBtn(
-                          settings.presenceIntervalMinutes === pm,
-                        )}`}
-                      >
-                        {pm}m
-                      </button>
-                    ))}
+                  <div className="md:col-span-7 space-y-2">
+                    <div className="text-xs font-semibold text-black/75 dark:text-white/75">
+                      Quick Verification Intervals
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[30, 45, 60, 90, 120].map((pm) => (
+                        <button
+                          key={pm}
+                          type="button"
+                          onClick={() => updateField('presenceIntervalMinutes', pm)}
+                          className={`flex-1 min-w-[54px] px-3 py-2 text-xs font-mono-tabular rounded-lg ${bwOptionBtn(
+                            settings.presenceIntervalMinutes === pm,
+                          )}`}
+                        >
+                          {formatCompactMinutes(pm)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
-          </section>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.section>
         )}
 
         {/* 04. Acoustics, Automation & Session Backup */}
         {showSound && (
-          <section className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-2xl border border-black/15 dark:border-white/20 p-5 sm:p-6 space-y-6"
+          >
             <div>
               <h2 className="text-base font-bold">04. Acoustics, Automation &amp; Data</h2>
               <p className="text-xs text-black/75 dark:text-white/80 mt-0.5">
@@ -966,7 +1028,7 @@ export function SettingsPage({
                 </div>
               </div>
             </div>
-          </section>
+          </motion.section>
         )}
       </main>
 

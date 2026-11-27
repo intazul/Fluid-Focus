@@ -1,4 +1,5 @@
 import { ArrowLeft, Check, Minus, Plus, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   MAX_PRESENCE_INTERVAL_MINUTES,
   MIN_PRESENCE_INTERVAL_MINUTES,
@@ -29,6 +30,14 @@ const bwOptionBtn = (active: boolean) =>
       ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
       : 'bg-white text-black dark:bg-black dark:text-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black font-semibold'
   }`;
+
+function formatEditDuration(totalMinutes: number): string {
+  const rounded = Math.max(0, Math.round(totalMinutes));
+  if (rounded < 60) return `${rounded}m`;
+  const hrs = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  return mins === 0 ? `${hrs}h` : `${hrs}h ${mins}m`;
+}
 
 export function EditPage({
   timerMode,
@@ -132,7 +141,7 @@ export function EditPage({
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">
-              {timerMode === 'countdown' ? 'Reset 25 / 5 / 15' : 'Reset 50m / 150m'}
+              {timerMode === 'countdown' ? 'Reset 25 / 5 / 15' : 'Reset 50m / 2h 30m'}
             </span>
             <span className="sm:hidden">Reset</span>
           </button>
@@ -149,30 +158,53 @@ export function EditPage({
                 : 'Set your open-ended session goal and daily focus target.'}
             </p>
 
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Edit mode">
-              <button
-                type="button"
-                onClick={() => onSwitchMode('countdown')}
-                className={`px-3.5 py-2 text-xs rounded-lg ${bwOptionBtn(
-                  timerMode === 'countdown',
-                )}`}
-              >
-                Countdown Times
-              </button>
-              <button
-                type="button"
-                onClick={() => onSwitchMode('countup')}
-                className={`px-3.5 py-2 text-xs rounded-lg ${bwOptionBtn(
-                  timerMode === 'countup',
-                )}`}
-              >
-                Count Up Goal
-              </button>
+            <div
+              className="inline-flex items-center gap-1 p-1 rounded-xl border-2 border-black dark:border-white bg-white dark:bg-black"
+              role="group"
+              aria-label="Edit mode"
+            >
+              {(
+                [
+                  { id: 'countdown', label: 'Countdown Times' },
+                  { id: 'countup', label: 'Count Up Goal' },
+                ] as { id: TimerMode; label: string }[]
+              ).map((m) => {
+                const selected = timerMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onSwitchMode(m.id)}
+                    className={`relative px-3.5 py-1.5 text-xs rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
+                      selected
+                        ? 'text-white dark:text-black font-bold'
+                        : 'text-black dark:text-white font-semibold hover:bg-black/10 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    {selected && (
+                      <motion.span
+                        layoutId="edit-mode-pill"
+                        transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                        className="absolute inset-0 rounded-lg bg-black dark:bg-white"
+                      />
+                    )}
+                    <span className="relative z-10">{m.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          <AnimatePresence mode="wait">
           {timerMode === 'countdown' ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <motion.div
+              key="edit-countdown-grid"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-5"
+            >
               {countdownRows.map((row) => {
                 const isActivePhase = phase === row.id;
                 return (
@@ -242,12 +274,13 @@ export function EditPage({
                           }
                           className="w-16 text-center text-base font-bold font-mono-tabular bg-transparent focus:outline-none"
                         />
-                        <span className="text-xs font-mono-tabular font-semibold opacity-75">
-                          min
+                        <span className="text-xs font-mono-tabular font-semibold opacity-75 whitespace-nowrap">
+                          {row.minutes >= 60 ? formatEditDuration(row.minutes) : 'min'}
                         </span>
                       </div>
 
-                      <button
+                      <motion.button
+                        whileTap={{ scale: 0.92 }}
                         type="button"
                         aria-label={`Increase ${row.label}`}
                         onClick={() => onUpdatePhaseMinutes(row.id, row.minutes + row.step)}
@@ -258,7 +291,7 @@ export function EditPage({
                         }`}
                       >
                         <Plus className="w-4 h-4" />
-                      </button>
+                      </motion.button>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -279,7 +312,7 @@ export function EditPage({
                                   : 'border-black dark:border-white bg-white text-black dark:bg-black dark:text-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black font-semibold'
                             }`}
                           >
-                            {qm}m
+                            {formatEditDuration(qm)}
                           </button>
                         );
                       })}
@@ -287,9 +320,16 @@ export function EditPage({
                   </div>
                 );
               })}
-            </div>
+            </motion.div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <motion.div
+              key="edit-countup-grid"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-5"
+            >
               {countUpGoals.map((goal, idx) => {
                 const isPrimary = idx === 0;
                 return (
@@ -344,12 +384,13 @@ export function EditPage({
                           onChange={(e) => goal.onUpdate(Number(e.target.value) || goal.min)}
                           className="w-16 text-center text-base font-bold font-mono-tabular bg-transparent focus:outline-none"
                         />
-                        <span className="text-xs font-mono-tabular font-semibold opacity-75">
-                          min
+                        <span className="text-xs font-mono-tabular font-semibold opacity-75 whitespace-nowrap">
+                          {goal.value >= 60 ? formatEditDuration(goal.value) : 'min'}
                         </span>
                       </div>
 
-                      <button
+                      <motion.button
+                        whileTap={{ scale: 0.92 }}
                         type="button"
                         aria-label={`Increase ${goal.label}`}
                         onClick={() => goal.onUpdate(goal.value + goal.step)}
@@ -360,7 +401,7 @@ export function EditPage({
                         }`}
                       >
                         <Plus className="w-4 h-4" />
-                      </button>
+                      </motion.button>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -381,7 +422,7 @@ export function EditPage({
                                   : 'border-black dark:border-white bg-white text-black dark:bg-black dark:text-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black font-semibold'
                             }`}
                           >
-                            {qm}m
+                            {formatEditDuration(qm)}
                           </button>
                         );
                       })}
@@ -389,8 +430,9 @@ export function EditPage({
                   </div>
                 );
               })}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
 
           {/* Presence Verification Check-In Card (Shared for both Countdown & Count Up) */}
           <section className="min-w-0 rounded-2xl border-2 border-black dark:border-white bg-white dark:bg-black p-5 sm:p-6 space-y-5 shadow-[0_14px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_14px_40px_rgba(255,255,255,0.05)]">
@@ -403,7 +445,7 @@ export function EditPage({
                 <p className="text-xs text-black/70 dark:text-white/75 mt-1">
                   Prompts you to tap &ldquo;I&rsquo;m Present&rdquo; every{' '}
                   <span className="font-mono-tabular font-bold">
-                    {settings.presenceIntervalMinutes}m
+                    {formatEditDuration(settings.presenceIntervalMinutes)}
                   </span>{' '}
                   (30m minimum) during both Countdown and Count Up focus sessions.
                 </p>
@@ -427,95 +469,107 @@ export function EditPage({
               </button>
             </div>
 
-            {settings.presenceCheckEnabled && (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center pt-4 border-t border-black/15 dark:border-white/20">
-                <div className="md:col-span-5 flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    aria-label="Decrease presence interval"
-                    onClick={() =>
-                      onUpdateSettings({
-                        ...settings,
-                        presenceIntervalMinutes: Math.max(
-                          MIN_PRESENCE_INTERVAL_MINUTES,
-                          settings.presenceIntervalMinutes - 5,
-                        ),
-                      })
-                    }
-                    className={`w-10 h-10 inline-flex items-center justify-center rounded-xl ${bwSolidBtn}`}
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-
-                  <div className="flex-1 min-w-0 inline-flex items-center justify-center h-10 px-3 rounded-xl border-2 border-black dark:border-white bg-white text-black dark:bg-black dark:text-white">
-                    <input
-                      type="number"
-                      min={MIN_PRESENCE_INTERVAL_MINUTES}
-                      max={MAX_PRESENCE_INTERVAL_MINUTES}
-                      value={settings.presenceIntervalMinutes}
-                      aria-label="Presence check-in interval minutes"
-                      onChange={(e) => {
-                        const raw = Number(e.target.value);
-                        const clean = Number.isFinite(raw)
-                          ? Math.max(
-                              MIN_PRESENCE_INTERVAL_MINUTES,
-                              Math.min(MAX_PRESENCE_INTERVAL_MINUTES, Math.round(raw)),
-                            )
-                          : MIN_PRESENCE_INTERVAL_MINUTES;
+            <AnimatePresence initial={false}>
+              {settings.presenceCheckEnabled && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center pt-4 border-t border-black/15 dark:border-white/20"
+                >
+                  <div className="md:col-span-5 flex items-center gap-2.5">
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
+                      type="button"
+                      aria-label="Decrease presence interval"
+                      onClick={() =>
                         onUpdateSettings({
                           ...settings,
-                          presenceIntervalMinutes: clean,
-                        });
-                      }}
-                      className="w-16 text-center text-base font-bold font-mono-tabular bg-transparent focus:outline-none"
-                    />
-                    <span className="text-xs font-mono-tabular font-semibold opacity-75">
-                      min
-                    </span>
-                  </div>
+                          presenceIntervalMinutes: Math.max(
+                            MIN_PRESENCE_INTERVAL_MINUTES,
+                            settings.presenceIntervalMinutes - 5,
+                          ),
+                        })
+                      }
+                      className={`w-10 h-10 inline-flex items-center justify-center rounded-xl ${bwSolidBtn}`}
+                    >
+                      <Minus className="w-4 h-4" />
+                    </motion.button>
 
-                  <button
-                    type="button"
-                    aria-label="Increase presence interval"
-                    onClick={() =>
-                      onUpdateSettings({
-                        ...settings,
-                        presenceIntervalMinutes: Math.min(
-                          MAX_PRESENCE_INTERVAL_MINUTES,
-                          settings.presenceIntervalMinutes + 5,
-                        ),
-                      })
-                    }
-                    className={`w-10 h-10 inline-flex items-center justify-center rounded-xl ${bwSolidBtn}`}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="md:col-span-7 flex flex-wrap gap-2">
-                  {[30, 45, 60, 90, 120].map((pm) => {
-                    const selected = settings.presenceIntervalMinutes === pm;
-                    return (
-                      <button
-                        key={pm}
-                        type="button"
-                        onClick={() =>
+                    <div className="flex-1 min-w-0 inline-flex items-center justify-center gap-1 h-10 px-3 rounded-xl border-2 border-black dark:border-white bg-white text-black dark:bg-black dark:text-white">
+                      <input
+                        type="number"
+                        min={MIN_PRESENCE_INTERVAL_MINUTES}
+                        max={MAX_PRESENCE_INTERVAL_MINUTES}
+                        value={settings.presenceIntervalMinutes}
+                        aria-label="Presence check-in interval minutes"
+                        onChange={(e) => {
+                          const raw = Number(e.target.value);
+                          const clean = Number.isFinite(raw)
+                            ? Math.max(
+                                MIN_PRESENCE_INTERVAL_MINUTES,
+                                Math.min(MAX_PRESENCE_INTERVAL_MINUTES, Math.round(raw)),
+                              )
+                            : MIN_PRESENCE_INTERVAL_MINUTES;
                           onUpdateSettings({
                             ...settings,
-                            presenceIntervalMinutes: pm,
-                          })
-                        }
-                        className={`flex-1 min-w-[54px] py-2 px-2.5 text-xs font-mono-tabular rounded-lg ${bwOptionBtn(
-                          selected,
-                        )}`}
-                      >
-                        {pm}m
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                            presenceIntervalMinutes: clean,
+                          });
+                        }}
+                        className="w-16 text-center text-base font-bold font-mono-tabular bg-transparent focus:outline-none"
+                      />
+                      <span className="text-xs font-mono-tabular font-semibold opacity-75 whitespace-nowrap">
+                        {settings.presenceIntervalMinutes >= 60
+                          ? formatEditDuration(settings.presenceIntervalMinutes)
+                          : 'min'}
+                      </span>
+                    </div>
+
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
+                      type="button"
+                      aria-label="Increase presence interval"
+                      onClick={() =>
+                        onUpdateSettings({
+                          ...settings,
+                          presenceIntervalMinutes: Math.min(
+                            MAX_PRESENCE_INTERVAL_MINUTES,
+                            settings.presenceIntervalMinutes + 5,
+                          ),
+                        })
+                      }
+                      className={`w-10 h-10 inline-flex items-center justify-center rounded-xl ${bwSolidBtn}`}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </motion.button>
+                  </div>
+
+                  <div className="md:col-span-7 flex flex-wrap gap-2">
+                    {[30, 45, 60, 90, 120].map((pm) => {
+                      const selected = settings.presenceIntervalMinutes === pm;
+                      return (
+                        <button
+                          key={pm}
+                          type="button"
+                          onClick={() =>
+                            onUpdateSettings({
+                              ...settings,
+                              presenceIntervalMinutes: pm,
+                            })
+                          }
+                          className={`flex-1 min-w-[54px] py-2 px-2.5 text-xs font-mono-tabular rounded-lg ${bwOptionBtn(
+                            selected,
+                          )}`}
+                        >
+                          {formatEditDuration(pm)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </section>
         </div>
 

@@ -90,8 +90,24 @@ function formatTitleTime(totalSeconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function getLocalDayKey(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatHoursMinutes(totalMinutes: number): string {
+  const rounded = Math.max(0, Math.round(totalMinutes));
+  if (rounded < 60) return `${rounded}m`;
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 export default function App() {
   const [view, setView] = useState<AppView>(() => getInitialView());
+  const [currentDayKey, setCurrentDayKey] = useState<string>(() => getLocalDayKey());
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [settings, setSettings] = useState<PomodoroSettings>(() => loadSettings());
   const [clockFormat, setClockFormat] = useState<ClockFormat>(() => loadClockFormat());
@@ -198,9 +214,36 @@ export default function App() {
   }, []);
 
 
+  // Roll over automatically each new calendar day (fresh daily measurement)
+  useEffect(() => {
+    const syncDay = () => {
+      const nextKey = getLocalDayKey();
+      setCurrentDayKey((prev) => (prev === nextKey ? prev : nextKey));
+    };
+    const intervalId = window.setInterval(syncDay, 30000);
+    const handleFocus = () => syncDay();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, []);
+
   const peakHour = useMemo(() => computePeakFocusHour(sessions), [sessions]);
   const isPeakWindow = useMemo(() => isWithinPeakWindow(peakHour), [peakHour]);
   const monolithRank = useMemo(() => getMonolithRank(xpState.totalXp), [xpState.totalXp]);
+  const todaySavedMinutes = useMemo(() => {
+    return sessions.reduce((sum, s) => {
+      if (s.type !== 'focus') return sum;
+      return getLocalDayKey(new Date(s.completedAt)) === currentDayKey
+        ? sum + s.durationSeconds / 60
+        : sum;
+    }, 0);
+  }, [currentDayKey, sessions]);
+  const todayLiveMinutes =
+    todaySavedMinutes + (phase === 'focus' ? elapsedSeconds / 60 : 0);
 
   const triggerXpBubble = useCallback(
     (amount: number, label = '30m Deep Concentration') => {
@@ -1122,16 +1165,17 @@ export default function App() {
         {view === 'analytics' && (
           <motion.div
             key="view-analytics"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 12, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.99 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           >
             <AnalyticsPage
               sessions={sessions}
               settings={settings}
               theme={theme}
               xpState={xpState}
+              currentDayKey={currentDayKey}
               onActivateStreakShield={handleActivateStreakShield}
               onAddStudiedSession={handleAddStudiedSession}
               onDeleteSession={handleDeleteSession}
@@ -1144,10 +1188,10 @@ export default function App() {
         {view === 'settings' && (
           <motion.div
             key="view-settings"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 12, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.99 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           >
             <SettingsPage
               theme={theme}
@@ -1171,10 +1215,10 @@ export default function App() {
         {view === 'edit' && (
           <motion.div
             key="view-edit"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 12, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.99 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           >
             <EditPage
               timerMode={timerMode}
@@ -1218,10 +1262,10 @@ export default function App() {
         {view === 'dashboard' && (
           <motion.div
             key="view-dashboard"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 12, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.99 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
             className="relative h-dvh w-full overflow-hidden bg-white dark:bg-black text-black dark:text-white transition-colors duration-200 atelier-grid-bg"
           >
             {/* Top-Left Corner: Extreme High-Contrast Settings & Analytics Icons */}
@@ -1255,15 +1299,18 @@ export default function App() {
               </motion.button>
             </div>
 
-            {/* Top-Right: Unboxed Quiet XP & Rank Readout */}
+            {/* Top-Right: Fresh Daily Studied Readout + Quiet XP & Rank */}
             <div
-              className={`fixed top-[max(1.25rem,calc(env(safe-area-inset-top)+0.25rem))] right-4 sm:top-7 sm:right-6 z-30 text-right transition-opacity duration-500 ${chromeOpacityClass}`}
-              title={`${Math.floor(xpState.carryFocusSeconds / 60)}/30m toward next +5 XP`}
+              className={`fixed top-[max(1.1rem,calc(env(safe-area-inset-top)+0.15rem))] right-4 sm:top-6 sm:right-6 z-30 text-right transition-opacity duration-500 ${chromeOpacityClass}`}
+              title={`Today's measured time (${currentDayKey}) · ${Math.floor(xpState.carryFocusSeconds / 60)}/30m toward next +5 XP`}
             >
               <div className="text-xs sm:text-sm font-bold font-mono-tabular tracking-tight text-black dark:text-white">
+                Today · {formatHoursMinutes(todayLiveMinutes)}
+              </div>
+              <div className="text-[11px] font-bold font-mono-tabular text-black/75 dark:text-white/80">
                 {xpState.totalXp} XP · {monolithRank.name}
               </div>
-              <div className="mt-1.5 w-20 h-[3px] bg-black/15 dark:bg-white/25 ml-auto overflow-hidden rounded-full">
+              <div className="mt-1 w-20 h-[3px] bg-black/15 dark:bg-white/25 ml-auto overflow-hidden rounded-full">
                 <motion.div
                   className="h-full bg-black dark:bg-white"
                   initial={false}
